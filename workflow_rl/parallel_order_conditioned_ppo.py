@@ -21,7 +21,7 @@ class ParallelOrderConditionedPPO:
                  lr: float = 0.002, betas: List[float] = [0.9, 0.990],
                  gamma: float = 0.99, K_epochs: int = 4, eps_clip: float = 0.2,
                  workflow_order: List[str] = None, workflow_manager = None,
-                 alignment_alpha: float = 10.0, alignment_beta: float = 10.0,
+                 alignment_lambda: float = 10.0,
                  update_steps: int = 100):  # Update every 100 steps (full episode) = 2500 transitions with 25 envs
         """
         Initialize parallel PPO agent
@@ -29,6 +29,7 @@ class ParallelOrderConditionedPPO:
         Args:
             n_envs: Number of parallel environments
             update_steps: Number of steps before PPO update
+            alignment_lambda: Single parameter for alignment reward (S = λ * compliance_rate)
         """
         
         self.input_dims = input_dims
@@ -38,8 +39,7 @@ class ParallelOrderConditionedPPO:
         self.gamma = gamma
         self.K_epochs = K_epochs
         self.eps_clip = eps_clip
-        self.alignment_alpha = alignment_alpha
-        self.alignment_beta = alignment_beta
+        self.alignment_lambda = alignment_lambda
         self.update_steps = update_steps
         
         # Workflow setup
@@ -91,6 +91,8 @@ class ParallelOrderConditionedPPO:
         self.env_total_fix_actions = np.zeros(n_envs)
         # Track which types have been fixed in each environment
         self.env_fixed_types = [set() for _ in range(n_envs)]
+        # Track last compliance-based alignment score for potential shaping
+        self.env_last_alignment_scores = np.zeros(n_envs)
         
     def get_actions(self, observations: np.ndarray, deterministic: bool = False) -> Tuple[np.ndarray, torch.Tensor, torch.Tensor]:
         """
@@ -170,6 +172,7 @@ class ParallelOrderConditionedPPO:
         
         for env_idx in range(self.n_envs):
             action = int(actions[env_idx])
+            violation = False
             
             # Only track Remove and Restore actions
             if action in remove_action_range or action in restore_action_range:
@@ -178,9 +181,7 @@ class ParallelOrderConditionedPPO:
                 
                 if target_type:
                     # Check if this fix violates the workflow order
-                    # Violation occurs if we fix a lower priority type before higher priority types
                     target_priority = self.workflow_order.index(target_type)
-                    violation = False
                     
                     # Check if any higher priority type hasn't been fixed yet
                     for priority_idx in range(target_priority):
@@ -196,19 +197,22 @@ class ParallelOrderConditionedPPO:
                     
                     # Mark this type as fixed
                     self.env_fixed_types[env_idx].add(target_type)
-        
-        # Give normalized reward at episode end (outside the action loop!)
-        if dones is not None:
-            for env_idx in range(self.n_envs):
-                if dones[env_idx]:
-                    if self.env_total_fix_actions[env_idx] > 0:
-                        compliance_rate = self.env_compliant_actions[env_idx] / self.env_total_fix_actions[env_idx]
-                        # Normalized reward: ranges from -beta to +alpha based on compliance
-                        # 0% compliance -> -beta, 100% compliance -> +alpha
-                        alignment_rewards[env_idx] = self.alignment_alpha * compliance_rate - self.alignment_beta * (1 - compliance_rate)
-                    # If no fix actions, small penalty to encourage fixing
-                    else:
-                        alignment_rewards[env_idx] = -self.alignment_beta * 0.5
+            
+            # Compute compliance-based score and potential shaping delta
+            # Formula: S = λ * compliance_rate
+            if self.env_total_fix_actions[env_idx] > 0:
+                compliance_rate = self.env_compliant_actions[env_idx] / self.env_total_fix_actions[env_idx]
+                current_score = self.alignment_lambda * compliance_rate
+            else:
+                current_score = 0.0
+            
+            # Per-step reward is the delta: λ * (new_rate - old_rate)
+            alignment_rewards[env_idx] = current_score - self.env_last_alignment_scores[env_idx]
+            self.env_last_alignment_scores[env_idx] = current_score
+            
+            # If episode ends with no fixes detected, give a small penalty
+            if dones is not None and dones[env_idx] and self.env_total_fix_actions[env_idx] == 0:
+                alignment_rewards[env_idx] -= self.alignment_lambda * 0.5
         
         return alignment_rewards
     
@@ -412,6 +416,7 @@ class ParallelOrderConditionedPPO:
         self.env_compliant_actions[env_idx] = 0
         self.env_total_fix_actions[env_idx] = 0
         self.env_fixed_types[env_idx] = set()
+        self.env_last_alignment_scores[env_idx] = 0.0
     
     def save(self, path: str):
         """Save model checkpoint"""

@@ -29,8 +29,7 @@ class ParallelWorkflowRLTrainer:
                  max_steps: int = 100,
                  scenario_path: str = '/home/ubuntu/CAGE2/cage-challenge-2/CybORG/CybORG/Shared/Scenarios/Scenario2.yaml',
                  red_agent_type=RedMeanderAgent,
-                 alignment_alpha: float = 10.0,
-                 alignment_beta: float = 10.0,
+                 alignment_lambda: float = 10.0,
                  gp_beta: float = 2.0,
                  checkpoint_dir: str = 'checkpoints',
                  compliance_threshold: float = 0.95,
@@ -51,8 +50,7 @@ class ParallelWorkflowRLTrainer:
         self.max_steps = max_steps
         self.scenario_path = scenario_path
         self.red_agent_type = red_agent_type
-        self.alignment_alpha = alignment_alpha
-        self.alignment_beta = alignment_beta
+        self.alignment_lambda = alignment_lambda
         self.compliance_threshold = compliance_threshold
         self.min_episodes = min_episodes
         self.update_every_steps = update_every_steps
@@ -102,8 +100,7 @@ class ParallelWorkflowRLTrainer:
             n_envs=self.n_envs,
             workflow_order=workflow_order,
             workflow_manager=self.workflow_manager,
-            alignment_alpha=self.alignment_alpha,
-            alignment_beta=self.alignment_beta,
+            alignment_lambda=self.alignment_lambda,
             update_steps=self.update_every_steps,
             K_epochs=4,
             eps_clip=0.2,
@@ -151,28 +148,16 @@ class ParallelWorkflowRLTrainer:
             # Get new true states after action
             new_true_states = envs.get_true_states()
             
-            # Compute alignment rewards based on the action and state transition
-            # This gives us the episode-end bonus (only non-zero when done=True)
+            # Compute alignment rewards based on compliance delta
             alignment_rewards = agent.compute_alignment_rewards(
                 actions, new_true_states, true_states, dones
             )
             
-            # For distributed rewards: spread episode-end bonus across the episode
-            # We approximate by giving each step 1/100th of the expected final bonus
-            # based on current compliance rate
-            distributed_rewards = np.zeros(self.n_envs)
-            for env_idx in range(self.n_envs):
-                if agent.env_total_fix_actions[env_idx] > 0:
-                    current_compliance = agent.env_compliant_actions[env_idx] / agent.env_total_fix_actions[env_idx]
-                    expected_bonus = agent.alignment_alpha * current_compliance - agent.alignment_beta * (1 - current_compliance)
-                    distributed_rewards[env_idx] = expected_bonus / 100  # Assuming ~100 steps per episode
-                
-                # Track actual alignment bonus at episode end
-                if dones[env_idx] and alignment_rewards[env_idx] != 0:
-                    current_episode_alignment_bonus[env_idx] = alignment_rewards[env_idx]
+            # Track alignment contributions per episode for logging
+            current_episode_alignment_bonus += alignment_rewards
             
             # Combine rewards
-            total_rewards = env_rewards + distributed_rewards
+            total_rewards = env_rewards + alignment_rewards
             
             # Store in buffer
             agent.buffer.add(
@@ -600,8 +585,7 @@ def main():
         n_workflows=20,
         train_episodes_per_env=2500,
         max_steps=100,
-        alignment_alpha=10.0,
-        alignment_beta=10.0,
+        alignment_lambda=10.0,
         gp_beta=2.0,
         compliance_threshold=0.95,
         min_episodes=10,
