@@ -352,32 +352,33 @@ class ParallelWorkflowRLTrainer:
             # Compliance check - stop when threshold is achieved
             min_episodes = np.min(episode_counts)
             if min_episodes >= self.min_episodes:
-                # Calculate recent compliance for all environments
-                recent_compliances = []
+                # Calculate latest compliance for all environments
+                latest_compliances = []
                 # Use cumulative fixes for compliance check
                 total_cumulative_fixes = np.sum(cumulative_fix_actions)
                 current_episode_fixes = np.sum(agent.env_total_fix_actions)
                 total_fixes = total_cumulative_fixes + current_episode_fixes
                 
                 for env_idx in range(self.n_envs):
-                    if len(episode_compliances[env_idx]) >= 5:
-                        recent = np.mean(episode_compliances[env_idx][-5:])
-                        recent_compliances.append(recent)
+                    if len(episode_compliances[env_idx]) >= 1:
+                        # Use only the most recent episode's compliance
+                        latest = episode_compliances[env_idx][-1]
+                        latest_compliances.append(latest)
                 
-                if recent_compliances:
-                    avg_recent_compliance = np.mean(recent_compliances)
+                if latest_compliances:
+                    avg_latest_compliance = np.mean(latest_compliances)
                     
-                    # Stop when compliance threshold is achieved with meaningful fixes
-                    if avg_recent_compliance >= self.compliance_threshold and total_fixes >= 10:
+                    # Stop when latest compliance threshold is achieved with meaningful fixes
+                    if avg_latest_compliance >= self.compliance_threshold and total_fixes >= 10:
                         print(f"\n  ✓ Compliance threshold achieved!")
                         print(f"    Episodes trained: {min_episodes} per env")
-                        print(f"    Compliance: {avg_recent_compliance:.2%}")
+                        print(f"    Latest compliance: {avg_latest_compliance:.2%}")
                         print(f"    Total fixes detected: {int(total_fixes)}")
                         compliance_achieved = True
                         break
-                    elif avg_recent_compliance >= self.compliance_threshold and total_fixes < 10:
+                    elif avg_latest_compliance >= self.compliance_threshold and total_fixes < 10:
                         # High compliance but no fixes - keep training
-                        print(f"  High compliance ({avg_recent_compliance:.2%}) but only "
+                        print(f"  High compliance ({avg_latest_compliance:.2%}) but only "
                               f"{int(total_fixes)} fixes detected - continuing training")
         
         # Check if max episodes reached without achieving compliance
