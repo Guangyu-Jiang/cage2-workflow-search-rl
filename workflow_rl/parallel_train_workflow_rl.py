@@ -25,34 +25,42 @@ class ParallelWorkflowRLTrainer:
     def __init__(self, 
                  n_envs: int = 25,
                  n_workflows: int = 20,
-                 train_episodes_per_env: int = 50,  # Episodes per environment
+                 max_train_episodes_per_env: int = 1000,  # Max episodes before giving up
                  max_steps: int = 100,
                  scenario_path: str = '/home/ubuntu/CAGE2/cage-challenge-2/CybORG/CybORG/Shared/Scenarios/Scenario2.yaml',
                  red_agent_type=RedMeanderAgent,
-                 alignment_lambda: float = 10.0,
+                 alignment_lambda: float = 30.0,  # Increased for stricter compliance
                  gp_beta: float = 2.0,
                  checkpoint_dir: str = 'checkpoints',
-                 compliance_threshold: float = 0.95,
-                 min_episodes: int = 10,
+                 compliance_threshold: float = 0.95,  # Must achieve this before evaluation
+                 min_episodes: int = 25,  # Minimum episodes before checking compliance
+                 n_eval_episodes: int = 20,  # Episodes for evaluation
                  update_every_steps: int = 100):  # Update every 100 steps (full episode) = 2500 transitions with 25 envs
         """
         Initialize parallel trainer
         
+        Training Strategy:
+        1. Train PPO with alignment rewards until compliance >= 95%
+        2. Evaluate on pure environment reward (without alignment)
+        3. Use evaluation reward as GP-UCB observation
+        
         Args:
             n_envs: Number of parallel environments
-            train_episodes_per_env: Episodes to run per environment
-            update_every_steps: Steps before PPO update (100 steps * 25 envs = 2500 transitions)
+            max_train_episodes_per_env: Max episodes to train before giving up
+            compliance_threshold: Required compliance rate before evaluation
+            n_eval_episodes: Episodes for final evaluation
         """
         
         self.n_envs = n_envs
         self.n_workflows = n_workflows
-        self.train_episodes_per_env = train_episodes_per_env
+        self.max_train_episodes_per_env = max_train_episodes_per_env
         self.max_steps = max_steps
         self.scenario_path = scenario_path
         self.red_agent_type = red_agent_type
         self.alignment_lambda = alignment_lambda
         self.compliance_threshold = compliance_threshold
         self.min_episodes = min_episodes
+        self.n_eval_episodes = n_eval_episodes
         self.update_every_steps = update_every_steps
         
         # Create checkpoint directory
@@ -71,9 +79,14 @@ class ParallelWorkflowRLTrainer:
         self.training_history = []
         
     def train_workflow_parallel(self, workflow_order: List[str], workflow_vector: np.ndarray,
-                               workflow_id: int) -> Tuple[float, float, int]:
+                               workflow_id: int) -> Tuple[float, float, int, bool]:
         """
-        Train PPO agent with specific workflow using parallel environments
+        Train PPO agent until compliance threshold is met, then evaluate
+        
+        Strategy:
+        1. Train with alignment rewards until compliance >= threshold
+        2. Evaluate on pure environment reward (no alignment)
+        3. Return evaluation reward for GP-UCB
         
         Args:
             workflow_order: Priority order of unit types
@@ -81,11 +94,14 @@ class ParallelWorkflowRLTrainer:
             workflow_id: ID for saving checkpoint
             
         Returns:
-            (average_reward, compliance_rate, total_episodes_run)
+            (evaluation_env_reward, final_compliance, total_episodes_trained, success)
         """
         
-        print(f"\nTraining with workflow: {' → '.join(workflow_order)}")
+        print(f"\n{'='*60}")
+        print(f"Training with workflow: {' → '.join(workflow_order)}")
+        print(f"Goal: Train until compliance >= {self.compliance_threshold:.1%}")
         print(f"Using {self.n_envs} parallel environments")
+        print(f"{'='*60}")
         
         # Create parallel environments
         envs = ParallelEnvWrapper(
@@ -131,11 +147,12 @@ class ParallelWorkflowRLTrainer:
         # Reset all environments
         observations = envs.reset()
         
-        # Training loop
+        # Training loop - continue until compliance threshold is met
         total_steps = 0
-        early_stopped = False
+        compliance_achieved = False
+        max_episodes_reached = False
         
-        while np.min(episode_counts) < self.train_episodes_per_env:
+        while np.min(episode_counts) < self.max_train_episodes_per_env:
             # Get current true states before action
             true_states = envs.get_true_states()
             
@@ -261,12 +278,12 @@ class ParallelWorkflowRLTrainer:
             
             total_steps += 1
             
-            # Early stopping check (check if all environments have high compliance)
+            # Compliance check - stop when threshold is achieved
             min_episodes = np.min(episode_counts)
             if min_episodes >= self.min_episodes:
                 # Calculate recent compliance for all environments
                 recent_compliances = []
-                # Use cumulative fixes for early stopping check
+                # Use cumulative fixes for compliance check
                 total_cumulative_fixes = np.sum(cumulative_fix_actions)
                 current_episode_fixes = np.sum(agent.env_total_fix_actions)
                 total_fixes = total_cumulative_fixes + current_episode_fixes
@@ -279,73 +296,72 @@ class ParallelWorkflowRLTrainer:
                 if recent_compliances:
                     avg_recent_compliance = np.mean(recent_compliances)
                     
-                    # Only stop if we have high compliance AND have actually detected fixes
-                    # (at least 10 fixes total across all environments)
+                    # Stop when compliance threshold is achieved with meaningful fixes
                     if avg_recent_compliance >= self.compliance_threshold and total_fixes >= 10:
-                        print(f"  Early stopping at avg {min_episodes} episodes: "
-                              f"Compliance {avg_recent_compliance:.2%} >= {self.compliance_threshold:.2%} "
-                              f"with {int(total_fixes)} fixes detected")
-                        early_stopped = True
+                        print(f"\n  ✓ Compliance threshold achieved!")
+                        print(f"    Episodes trained: {min_episodes} per env")
+                        print(f"    Compliance: {avg_recent_compliance:.2%}")
+                        print(f"    Total fixes detected: {int(total_fixes)}")
+                        compliance_achieved = True
                         break
                     elif avg_recent_compliance >= self.compliance_threshold and total_fixes < 10:
                         # High compliance but no fixes - keep training
                         print(f"  High compliance ({avg_recent_compliance:.2%}) but only "
                               f"{int(total_fixes)} fixes detected - continuing training")
         
+        # Check if max episodes reached without achieving compliance
+        if not compliance_achieved:
+            max_episodes_reached = True
+            print(f"\n  ✗ Max episodes reached without achieving compliance threshold")
+            print(f"    Episodes trained: {int(np.mean(episode_counts))} per env")
+        
         # Close environments
         envs.close()
         
-        # Save trained agent
-        checkpoint_path = os.path.join(
-            self.checkpoint_dir,
-            f"workflow_{workflow_id}_parallel_agent.pth"
-        )
-        agent.save(checkpoint_path)
-        
-        # Calculate final performance
-        all_final_env_rewards = []
-        all_final_total_rewards = []
+        # Calculate training stats
         all_final_compliances = []
-        
         for env_idx in range(self.n_envs):
-            if len(episode_rewards[env_idx]) > 0:
-                # Use last 10 episodes for each environment
-                final_env_rewards = episode_rewards[env_idx][-10:]
-                final_total_rewards = episode_total_rewards[env_idx][-10:]
-                final_compliances = episode_compliances[env_idx][-10:]
-                all_final_env_rewards.extend(final_env_rewards)
-                all_final_total_rewards.extend(final_total_rewards)
+            if len(episode_compliances[env_idx]) > 0:
+                final_compliances = episode_compliances[env_idx][-5:]
                 all_final_compliances.extend(final_compliances)
         
-        final_avg_env_reward = np.mean(all_final_env_rewards) if all_final_env_rewards else 0
-        final_avg_total_reward = np.mean(all_final_total_rewards) if all_final_total_rewards else 0
-        final_avg_compliance = np.mean(all_final_compliances) if all_final_compliances else 0
+        final_training_compliance = np.mean(all_final_compliances) if all_final_compliances else 0
         total_episodes = np.sum(episode_counts)
         
-        # If early stopped, evaluate on pure environment reward
-        if early_stopped:
-            print(f"  Evaluating early-stopped agent (trained for {int(total_episodes)} total episodes)")
-            eval_reward, eval_compliance = self.evaluate_pure_performance_parallel(
-                agent, workflow_order, n_eval_episodes=10
+        # Evaluate ONLY if compliance threshold was achieved
+        eval_reward = -1000.0  # Default penalty for failed training
+        eval_compliance = 0.0
+        
+        if compliance_achieved:
+            # Save trained agent
+            checkpoint_path = os.path.join(
+                self.checkpoint_dir,
+                f"workflow_{workflow_id}_compliant_agent.pth"
             )
-            final_avg_env_reward = eval_reward
+            agent.save(checkpoint_path)
+            
+            print(f"\n{'='*60}")
+            print(f"EVALUATION PHASE")
+            print(f"{'='*60}")
+            print(f"Evaluating agent on PURE ENVIRONMENT REWARD (no alignment)")
+            print(f"Running {self.n_eval_episodes} episodes per environment...")
+            
+            # Evaluate on pure environment reward (no alignment rewards)
+            eval_reward, eval_compliance = self.evaluate_pure_performance_parallel(
+                agent, workflow_order, n_eval_episodes=self.n_eval_episodes
+            )
+            
+            print(f"\nEvaluation Results:")
+            print(f"  Environment Reward: {eval_reward:.2f}")
+            print(f"  Compliance (eval): {eval_compliance:.2%}")
+            print(f"  → This reward will be used for GP-UCB")
+            print(f"{'='*60}")
+        else:
+            print(f"\n  ✗ Training failed - compliance threshold not achieved")
+            print(f"  Final compliance: {final_training_compliance:.2%}")
+            print(f"  Assigning penalty reward: {eval_reward:.2f}")
         
-        # Calculate average fixes per episode from last 10 episodes
-        all_final_fixes = []
-        for env_idx in range(self.n_envs):
-            if len(episode_fix_counts[env_idx]) > 0:
-                final_fixes = episode_fix_counts[env_idx][-10:]
-                all_final_fixes.extend(final_fixes)
-        avg_fixes_per_episode = np.mean(all_final_fixes) if all_final_fixes else 0
-        
-        print(f"  Final performance (last 10 eps/env):")
-        print(f"    Env Reward/Episode: {final_avg_env_reward:.2f}")
-        print(f"    Total Reward/Episode: {final_avg_total_reward:.2f}")
-        print(f"    Compliance: {final_avg_compliance:.2%}")
-        print(f"    Avg Fixes/Episode: {avg_fixes_per_episode:.1f}")
-        print(f"    Total Episodes: {int(total_episodes)} (across {self.n_envs} envs)")
-        
-        return final_avg_env_reward, final_avg_compliance, int(np.mean(episode_counts))
+        return eval_reward, final_training_compliance, int(np.mean(episode_counts)), compliance_achieved
     
     def evaluate_pure_performance_parallel(self, agent: ParallelOrderConditionedPPO,
                                           workflow_order: List[str],
@@ -420,16 +436,31 @@ class ParallelWorkflowRLTrainer:
         return np.mean(all_rewards), np.mean(all_compliances)
     
     def run_workflow_search(self):
-        """Main training loop for workflow search"""
+        """
+        Main training loop for workflow search
+        
+        Strategy:
+        1. GP-UCB selects next workflow to explore
+        2. Train PPO with alignment rewards until compliance >= 95%
+        3. Evaluate on pure environment reward (no alignment)
+        4. Use evaluation reward as GP-UCB observation
+        5. Repeat for N workflows
+        """
         
         print(f"\n{'='*60}")
-        print(f"Starting Parallel Workflow Search-Based RL Training")
+        print(f"Compliance-Gated Workflow Search")
         print(f"{'='*60}")
         print(f"Number of parallel environments: {self.n_envs}")
         print(f"Number of workflows to explore: {self.n_workflows}")
-        print(f"Episodes per environment: {self.train_episodes_per_env}")
-        print(f"Update every {self.update_every_steps} steps (full episode × {self.n_envs} envs = {self.update_every_steps * self.n_envs} transitions)")
-        print(f"Early stopping threshold: {self.compliance_threshold:.1%}")
+        print(f"Max episodes per environment: {self.max_train_episodes_per_env}")
+        print(f"Compliance threshold: {self.compliance_threshold:.1%}")
+        print(f"Evaluation episodes: {self.n_eval_episodes} per env")
+        print(f"Alignment lambda: {self.alignment_lambda}")
+        print(f"\nTraining Strategy:")
+        print(f"  1. Train with alignment rewards until compliance >= {self.compliance_threshold:.1%}")
+        print(f"  2. Evaluate on pure environment reward")
+        print(f"  3. Use evaluation reward for GP-UCB")
+        print(f"{'='*60}")
         
         # Main search loop
         for iteration in range(self.n_workflows):
@@ -492,33 +523,47 @@ class ParallelWorkflowRLTrainer:
             # Convert to workflow vector (one-hot encoding)
             workflow_vector = self.workflow_manager.order_to_onehot(workflow_order)
             
-            # 2. Train PPO with this workflow using parallel environments
-            train_reward, train_compliance, avg_episodes = self.train_workflow_parallel(
+            # 2. Train PPO with this workflow until compliance threshold is met
+            eval_reward, train_compliance, avg_episodes, success = self.train_workflow_parallel(
                 workflow_order, workflow_vector, iteration
             )
             
-            # 3. Update GP-UCB with results
-            self.gp_search.add_observation(
-                workflow_order, train_reward
-            )
+            # 3. Update GP-UCB ONLY if compliance threshold was achieved
+            if success:
+                self.gp_search.add_observation(
+                    workflow_order, eval_reward
+                )
+                print(f"\n✓ GP-UCB updated with evaluation reward: {eval_reward:.2f}")
+            else:
+                # Do NOT record failed samples - skip this workflow
+                print(f"\n✗ Compliance not achieved - sample NOT recorded in GP-UCB")
+                print(f"   (This workflow will not influence the search)")
             
             # 4. Record results
             result = {
                 'iteration': iteration,
                 'workflow': workflow_order,
-                'train_reward': train_reward,
+                'eval_reward': eval_reward,  # Pure environment reward from evaluation
                 'train_compliance': train_compliance,
                 'avg_episodes_trained': avg_episodes,
+                'success': success,
                 'n_envs': self.n_envs
             }
             self.training_history.append(result)
             
-            # 5. Print results
-            print(f"\nResults:")
+            # 5. Print iteration summary
+            print(f"\n{'='*60}")
+            print(f"ITERATION {iteration + 1} SUMMARY")
+            print(f"{'='*60}")
             print(f"  Workflow: {' → '.join(workflow_order)}")
-            print(f"  Training: Env Reward={train_reward:.2f}, Compliance={train_compliance:.2%}")
-            print(f"  Average Episodes: {avg_episodes}")
-            print(f"  Note: PPO optimizes Env Reward + Alignment Reward internally")
+            print(f"  Training Episodes: {avg_episodes} per env")
+            print(f"  Final Compliance: {train_compliance:.2%}")
+            print(f"  Success: {'✓ Yes' if success else '✗ No'}")
+            if success:
+                print(f"  Evaluation Reward (for GP-UCB): {eval_reward:.2f}")
+            else:
+                print(f"  Penalty (for GP-UCB): {eval_reward:.2f}")
+            print(f"{'='*60}")
             
             # 6. Print best so far
             if self.gp_search.observed_orders:
@@ -560,16 +605,20 @@ class ParallelWorkflowRLTrainer:
             print(f"Best Workflow: {' → '.join(best_workflow)}")
             print(f"Best Reward: {best_reward:.2f}")
         
-        # Print top 5 workflows
-        print("\nTop 5 Workflows:")
-        sorted_history = sorted(self.training_history, 
-                               key=lambda x: x['train_reward'], 
+        # Print top 5 successful workflows
+        print("\nTop 5 Workflows (successful only):")
+        successful = [r for r in self.training_history if r['success']]
+        sorted_history = sorted(successful, 
+                               key=lambda x: x['eval_reward'], 
                                reverse=True)[:5]
         
-        for i, result in enumerate(sorted_history):
-            print(f"{i+1}. {' → '.join(result['workflow'])}")
-            print(f"   Reward: {result['train_reward']:.2f}, "
-                  f"Compliance: {result['train_compliance']:.2%}")
+        if sorted_history:
+            for i, result in enumerate(sorted_history):
+                print(f"{i+1}. {' → '.join(result['workflow'])}")
+                print(f"   Eval Reward: {result['eval_reward']:.2f}, "
+                      f"Compliance: {result['train_compliance']:.2%}")
+        else:
+            print("  No successful workflows yet")
 
 
 def main():
@@ -583,14 +632,15 @@ def main():
     trainer = ParallelWorkflowRLTrainer(
         n_envs=25,  # 25 parallel environments
         n_workflows=20,
-        train_episodes_per_env=2500,
+        max_train_episodes_per_env=1000,  # Max episodes to train before giving up
         max_steps=100,
-        alignment_lambda=10.0,
+        alignment_lambda=30.0,  # Increased for stricter compliance (was 10.0)
         gp_beta=2.0,
-        compliance_threshold=0.95,
-        min_episodes=10,
+        compliance_threshold=0.95,  # Must achieve 95% before evaluation
+        min_episodes=25,  # Min episodes before checking compliance
+        n_eval_episodes=20,  # Episodes for final evaluation
         update_every_steps=100,  # Update every 2500 transitions (100*25)
-        checkpoint_dir='parallel_checkpoints'
+        checkpoint_dir='compliance_checkpoints'
     )
     
     # Run workflow search
