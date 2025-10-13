@@ -706,23 +706,48 @@ class ParallelWorkflowRLTrainer:
 def main():
     """Main entry point for parallel training"""
     
+    # ========== HYPERPARAMETERS ==========
+    
+    # Environment Configuration
+    N_ENVS = 25                          # Number of parallel environments
+    N_WORKFLOWS = 20                     # Number of workflows to explore
+    MAX_TRAIN_EPISODES_PER_ENV = 100     # Max episodes per env per workflow
+    MAX_STEPS = 100                      # Max steps per episode
+    RED_AGENT_TYPE = RedMeanderAgent     # Red agent: RedMeanderAgent, B_lineAgent, or SleepAgent
+    
+    # Learning Configuration
+    ALIGNMENT_LAMBDA = 30.0              # Compliance reward strength (higher = stricter)
+    COMPLIANCE_THRESHOLD = 0.95          # Required compliance before evaluation (0.0-1.0)
+    MIN_EPISODES = 25                    # Min episodes before checking compliance
+    UPDATE_EVERY_STEPS = 100             # PPO update frequency (steps)
+    
+    # Search Configuration
+    GP_BETA = 2.0                        # GP-UCB exploration parameter
+    N_EVAL_EPISODES = 20                 # Episodes for final evaluation
+    
+    # Output Configuration
+    CHECKPOINT_DIR = 'compliance_checkpoints'  # Directory for logs and checkpoints
+    
+    # =====================================
+    
     # Set seeds for reproducibility
     np.random.seed(42)
     torch.manual_seed(42)
     
     # Create trainer with parallel environments
     trainer = ParallelWorkflowRLTrainer(
-        n_envs=25,  # 25 parallel environments
-        n_workflows=20,
-        max_train_episodes_per_env=100,  # Max episodes per env per workflow (early stop at 95%)
-        max_steps=100,
-        alignment_lambda=30.0,  # Increased for stricter compliance (was 10.0)
-        gp_beta=2.0,
-        compliance_threshold=0.95,  # Must achieve 95% before evaluation
-        min_episodes=25,  # Min episodes before checking compliance
-        n_eval_episodes=20,  # Episodes for final evaluation
-        update_every_steps=100,  # Update every 2500 transitions (100*25)
-        checkpoint_dir='compliance_checkpoints'
+        n_envs=N_ENVS,
+        n_workflows=N_WORKFLOWS,
+        max_train_episodes_per_env=MAX_TRAIN_EPISODES_PER_ENV,
+        max_steps=MAX_STEPS,
+        red_agent_type=RED_AGENT_TYPE,
+        alignment_lambda=ALIGNMENT_LAMBDA,
+        gp_beta=GP_BETA,
+        compliance_threshold=COMPLIANCE_THRESHOLD,
+        min_episodes=MIN_EPISODES,
+        n_eval_episodes=N_EVAL_EPISODES,
+        update_every_steps=UPDATE_EVERY_STEPS,
+        checkpoint_dir=CHECKPOINT_DIR
     )
     
     # Run workflow search
