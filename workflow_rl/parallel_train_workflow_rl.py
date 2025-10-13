@@ -7,6 +7,7 @@ import numpy as np
 import torch
 import json
 import csv
+import argparse
 from typing import List, Tuple, Dict
 from datetime import datetime
 
@@ -704,36 +705,109 @@ class ParallelWorkflowRLTrainer:
             print("  No successful workflows yet")
 
 
+def parse_args():
+    """Parse command-line arguments"""
+    parser = argparse.ArgumentParser(
+        description='Compliance-Gated Workflow Search for CAGE2',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    
+    # Environment Configuration
+    env_group = parser.add_argument_group('Environment Configuration')
+    env_group.add_argument('--n-envs', type=int, default=25,
+                          help='Number of parallel environments')
+    env_group.add_argument('--n-workflows', type=int, default=20,
+                          help='Number of workflows to explore')
+    env_group.add_argument('--max-episodes', type=int, default=100,
+                          help='Max episodes per environment per workflow')
+    env_group.add_argument('--max-steps', type=int, default=100,
+                          help='Max steps per episode')
+    env_group.add_argument('--red-agent', type=str, default='meander',
+                          choices=['meander', 'bline', 'sleep'],
+                          help='Red agent type: meander (aggressive), bline (moderate), sleep (none)')
+    
+    # Learning Configuration
+    learn_group = parser.add_argument_group('Learning Configuration')
+    learn_group.add_argument('--alignment-lambda', type=float, default=30.0,
+                            help='Compliance reward strength (higher = stricter)')
+    learn_group.add_argument('--compliance-threshold', type=float, default=0.95,
+                            help='Required compliance before evaluation (0.0-1.0)')
+    learn_group.add_argument('--min-episodes', type=int, default=25,
+                            help='Min episodes before checking compliance')
+    learn_group.add_argument('--update-steps', type=int, default=100,
+                            help='PPO update frequency (steps)')
+    
+    # Search Configuration
+    search_group = parser.add_argument_group('Search Configuration')
+    search_group.add_argument('--gp-beta', type=float, default=2.0,
+                             help='GP-UCB exploration parameter')
+    search_group.add_argument('--n-eval-episodes', type=int, default=20,
+                             help='Episodes for final evaluation')
+    
+    # Output Configuration
+    output_group = parser.add_argument_group('Output Configuration')
+    output_group.add_argument('--checkpoint-dir', type=str, default='compliance_checkpoints',
+                             help='Directory for logs and checkpoints')
+    output_group.add_argument('--seed', type=int, default=42,
+                             help='Random seed for reproducibility')
+    
+    return parser.parse_args()
+
+
 def main():
     """Main entry point for parallel training"""
+    
+    # Parse command-line arguments
+    args = parse_args()
+    
+    # Map red agent string to class
+    red_agent_map = {
+        'meander': RedMeanderAgent,
+        'bline': B_lineAgent,
+        'sleep': SleepAgent
+    }
+    RED_AGENT_TYPE = red_agent_map[args.red_agent]
     
     # ========== HYPERPARAMETERS ==========
     
     # Environment Configuration
-    N_ENVS = 25                          # Number of parallel environments
-    N_WORKFLOWS = 20                     # Number of workflows to explore
-    MAX_TRAIN_EPISODES_PER_ENV = 100     # Max episodes per env per workflow
-    MAX_STEPS = 100                      # Max steps per episode
-    RED_AGENT_TYPE = RedMeanderAgent     # Red agent: RedMeanderAgent, B_lineAgent, or SleepAgent
+    N_ENVS = args.n_envs
+    N_WORKFLOWS = args.n_workflows
+    MAX_TRAIN_EPISODES_PER_ENV = args.max_episodes
+    MAX_STEPS = args.max_steps
     
     # Learning Configuration
-    ALIGNMENT_LAMBDA = 30.0              # Compliance reward strength (higher = stricter)
-    COMPLIANCE_THRESHOLD = 0.95          # Required compliance before evaluation (0.0-1.0)
-    MIN_EPISODES = 25                    # Min episodes before checking compliance
-    UPDATE_EVERY_STEPS = 100             # PPO update frequency (steps)
+    ALIGNMENT_LAMBDA = args.alignment_lambda
+    COMPLIANCE_THRESHOLD = args.compliance_threshold
+    MIN_EPISODES = args.min_episodes
+    UPDATE_EVERY_STEPS = args.update_steps
     
     # Search Configuration
-    GP_BETA = 2.0                        # GP-UCB exploration parameter
-    N_EVAL_EPISODES = 20                 # Episodes for final evaluation
+    GP_BETA = args.gp_beta
+    N_EVAL_EPISODES = args.n_eval_episodes
     
     # Output Configuration
-    CHECKPOINT_DIR = 'compliance_checkpoints'  # Directory for logs and checkpoints
+    CHECKPOINT_DIR = args.checkpoint_dir
+    SEED = args.seed
     
     # =====================================
     
+    print(f"\n{'='*60}")
+    print(f"Configuration")
+    print(f"{'='*60}")
+    print(f"Red Agent: {args.red_agent} ({RED_AGENT_TYPE.__name__})")
+    print(f"Parallel Envs: {N_ENVS}")
+    print(f"Workflows: {N_WORKFLOWS}")
+    print(f"Max Episodes/Env: {MAX_TRAIN_EPISODES_PER_ENV}")
+    print(f"Alignment Lambda: {ALIGNMENT_LAMBDA}")
+    print(f"Compliance Threshold: {COMPLIANCE_THRESHOLD:.1%}")
+    print(f"Checkpoint Dir: {CHECKPOINT_DIR}")
+    print(f"Random Seed: {SEED}")
+    print(f"{'='*60}\n")
+    
     # Set seeds for reproducibility
-    np.random.seed(42)
-    torch.manual_seed(42)
+    np.random.seed(SEED)
+    torch.manual_seed(SEED)
     
     # Create trainer with parallel environments
     trainer = ParallelWorkflowRLTrainer(
