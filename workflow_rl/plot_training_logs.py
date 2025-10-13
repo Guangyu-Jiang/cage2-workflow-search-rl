@@ -17,17 +17,17 @@ import os
 def plot_workflow_training(workflow_id, checkpoint_dir='compliance_checkpoints'):
     """Plot training curves for a specific workflow"""
     
-    # Load CSV files
-    detailed_file = os.path.join(checkpoint_dir, f'workflow_{workflow_id}_detailed_log.csv')
-    summary_file = os.path.join(checkpoint_dir, f'workflow_{workflow_id}_summary_log.csv')
+    # Load CSV file
+    log_file = os.path.join(checkpoint_dir, f'workflow_{workflow_id}_training_log.csv')
     
-    if not os.path.exists(detailed_file):
-        print(f"Error: {detailed_file} not found!")
+    if not os.path.exists(log_file):
+        print(f"Error: {log_file} not found!")
         return
     
-    # Load data
-    detailed_df = pd.read_csv(detailed_file)
-    summary_df = pd.read_csv(summary_file) if os.path.exists(summary_file) else None
+    # Load data and separate episode and summary rows
+    df = pd.read_csv(log_file)
+    detailed_df = df[df['Type'] == 'episode'].copy()
+    summary_df = df[df['Type'] == 'summary'].copy()
     
     # Create figure with subplots
     fig, axes = plt.subplots(2, 3, figsize=(18, 10))
@@ -39,8 +39,8 @@ def plot_workflow_training(workflow_id, checkpoint_dir='compliance_checkpoints')
         env_data = detailed_df[detailed_df['Env_ID'] == env_id]
         ax.plot(env_data['Episode'], env_data['Env_Reward'].astype(float), 
                 alpha=0.3, linewidth=0.5)
-    if summary_df is not None:
-        ax.plot(summary_df['Total_Episodes'], summary_df['Avg_Env_Reward'].astype(float),
+    if len(summary_df) > 0:
+        ax.plot(summary_df['Total_Episodes'], summary_df['Env_Reward'].astype(float),
                 color='red', linewidth=2, label='Average')
     ax.set_xlabel('Episode')
     ax.set_ylabel('Environment Reward')
@@ -54,8 +54,8 @@ def plot_workflow_training(workflow_id, checkpoint_dir='compliance_checkpoints')
         env_data = detailed_df[detailed_df['Env_ID'] == env_id]
         ax.plot(env_data['Episode'], env_data['Total_Reward'].astype(float),
                 alpha=0.3, linewidth=0.5)
-    if summary_df is not None:
-        ax.plot(summary_df['Total_Episodes'], summary_df['Avg_Total_Reward'].astype(float),
+    if len(summary_df) > 0:
+        ax.plot(summary_df['Total_Episodes'], summary_df['Total_Reward'].astype(float),
                 color='red', linewidth=2, label='Average')
     ax.set_xlabel('Episode')
     ax.set_ylabel('Total Reward (Env + Alignment)')
@@ -69,8 +69,8 @@ def plot_workflow_training(workflow_id, checkpoint_dir='compliance_checkpoints')
         env_data = detailed_df[detailed_df['Env_ID'] == env_id]
         ax.plot(env_data['Episode'], env_data['Alignment_Bonus'].astype(float),
                 alpha=0.3, linewidth=0.5)
-    if summary_df is not None:
-        ax.plot(summary_df['Total_Episodes'], summary_df['Avg_Alignment_Bonus'].astype(float),
+    if len(summary_df) > 0:
+        ax.plot(summary_df['Total_Episodes'], summary_df['Alignment_Bonus'].astype(float),
                 color='red', linewidth=2, label='Average')
     ax.set_xlabel('Episode')
     ax.set_ylabel('Alignment Bonus')
@@ -82,10 +82,10 @@ def plot_workflow_training(workflow_id, checkpoint_dir='compliance_checkpoints')
     ax = axes[1, 0]
     for env_id in detailed_df['Env_ID'].unique():
         env_data = detailed_df[detailed_df['Env_ID'] == env_id]
-        ax.plot(env_data['Episode'], detailed_df[detailed_df['Env_ID'] == env_id]['Compliance'].astype(float),
+        ax.plot(env_data['Episode'], env_data['Compliance'].astype(float),
                 alpha=0.3, linewidth=0.5)
-    if summary_df is not None:
-        ax.plot(summary_df['Total_Episodes'], summary_df['Avg_Compliance'].astype(float),
+    if len(summary_df) > 0:
+        ax.plot(summary_df['Total_Episodes'], summary_df['Compliance'].astype(float),
                 color='red', linewidth=2, label='Average')
     ax.axhline(y=0.95, color='green', linestyle='--', label='Target (95%)')
     ax.set_xlabel('Episode')
@@ -101,8 +101,8 @@ def plot_workflow_training(workflow_id, checkpoint_dir='compliance_checkpoints')
         env_data = detailed_df[detailed_df['Env_ID'] == env_id]
         ax.plot(env_data['Episode'], env_data['Fixes'],
                 alpha=0.3, linewidth=0.5)
-    if summary_df is not None:
-        ax.plot(summary_df['Total_Episodes'], summary_df['Avg_Fixes'].astype(float),
+    if len(summary_df) > 0:
+        ax.plot(summary_df['Total_Episodes'], summary_df['Fixes'].astype(float),
                 color='red', linewidth=2, label='Average')
     ax.set_xlabel('Episode')
     ax.set_ylabel('Number of Fixes')
@@ -115,8 +115,8 @@ def plot_workflow_training(workflow_id, checkpoint_dir='compliance_checkpoints')
     ax.axis('off')
     
     # Calculate summary stats
-    final_env_reward = summary_df['Avg_Env_Reward'].astype(float).iloc[-1] if summary_df is not None else detailed_df['Env_Reward'].astype(float).mean()
-    final_compliance = summary_df['Avg_Compliance'].astype(float).iloc[-1] if summary_df is not None else detailed_df['Compliance'].astype(float).mean()
+    final_env_reward = summary_df['Env_Reward'].astype(float).iloc[-1] if len(summary_df) > 0 else detailed_df['Env_Reward'].astype(float).mean()
+    final_compliance = summary_df['Compliance'].astype(float).iloc[-1] if len(summary_df) > 0 else detailed_df['Compliance'].astype(float).mean()
     avg_fixes = detailed_df['Fixes'].mean()
     total_episodes = detailed_df['Episode'].max()
     n_envs = detailed_df['Env_ID'].nunique()
