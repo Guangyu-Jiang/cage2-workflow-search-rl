@@ -205,7 +205,7 @@ class ParallelWorkflowRLTrainer:
             for env_idx in range(self.n_envs):
                 # Check if episode is done (either by environment or max steps)
                 if dones[env_idx] or current_episode_steps[env_idx] >= self.max_steps:
-                    if episode_counts[env_idx] < self.train_episodes_per_env:
+                    if episode_counts[env_idx] < self.max_train_episodes_per_env:
                         # Record episode stats
                         episode_rewards[env_idx].append(current_episode_rewards[env_idx])
                         episode_total_rewards[env_idx].append(current_episode_total_rewards[env_idx])
