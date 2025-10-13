@@ -6,6 +6,7 @@ import os
 import numpy as np
 import torch
 import json
+import csv
 from typing import List, Tuple, Dict
 from datetime import datetime
 
@@ -105,6 +106,34 @@ class ParallelWorkflowRLTrainer:
         print(f"Goal: Train until compliance >= {self.compliance_threshold:.1%}")
         print(f"Using {self.n_envs} parallel environments")
         print(f"{'='*60}")
+        
+        # Create CSV log files for this workflow
+        # Detailed log: one row per episode per environment
+        detailed_log_filename = os.path.join(
+            self.checkpoint_dir,
+            f"workflow_{workflow_id}_detailed_log.csv"
+        )
+        detailed_csv_file = open(detailed_log_filename, 'w', newline='')
+        detailed_csv_writer = csv.writer(detailed_csv_file)
+        detailed_csv_writer.writerow([
+            'Episode', 'Env_ID', 'Env_Reward', 'Total_Reward', 
+            'Alignment_Bonus', 'Compliance', 'Fixes', 'Steps'
+        ])
+        
+        # Summary log: averaged across all environments every N episodes
+        summary_log_filename = os.path.join(
+            self.checkpoint_dir,
+            f"workflow_{workflow_id}_summary_log.csv"
+        )
+        summary_csv_file = open(summary_log_filename, 'w', newline='')
+        summary_csv_writer = csv.writer(summary_csv_file)
+        summary_csv_writer.writerow([
+            'Total_Episodes', 'Avg_Env_Reward', 'Avg_Total_Reward',
+            'Avg_Alignment_Bonus', 'Avg_Compliance', 'Avg_Fixes'
+        ])
+        
+        print(f"  Detailed log: {detailed_log_filename}")
+        print(f"  Summary log: {summary_log_filename}")
         
         # Create parallel environments
         envs = ParallelEnvWrapper(
@@ -251,6 +280,19 @@ class ParallelWorkflowRLTrainer:
                         # Increment episode count
                         episode_counts[env_idx] += 1
                         
+                        # Log to detailed CSV file
+                        detailed_csv_writer.writerow([
+                            episode_counts[env_idx],  # Episode number for this env
+                            env_idx,  # Environment ID
+                            f"{current_episode_rewards[env_idx]:.2f}",  # Env reward
+                            f"{current_episode_total_rewards[env_idx]:.2f}",  # Total reward
+                            f"{current_episode_alignment_bonus[env_idx]:.2f}",  # Alignment bonus
+                            f"{compliance:.4f}",  # Compliance rate
+                            fixes_this_episode,  # Number of fixes
+                            current_episode_steps[env_idx]  # Steps taken
+                        ])
+                        detailed_csv_file.flush()  # Ensure data is written immediately
+                        
                         # Reset episode tracking
                         current_episode_rewards[env_idx] = 0
                         current_episode_total_rewards[env_idx] = 0
@@ -292,6 +334,17 @@ class ParallelWorkflowRLTrainer:
                     avg_alignment_bonus = np.mean(all_alignment_bonuses)
                     avg_compliance = np.mean(all_compliances)
                     avg_fixes_per_episode = np.mean(all_fixes_per_episode) if all_fixes_per_episode else 0
+                    
+                    # Log to summary CSV
+                    summary_csv_writer.writerow([
+                        int(total_episodes),  # Total episodes
+                        f"{avg_env_reward:.2f}",  # Avg env reward
+                        f"{avg_total_reward:.2f}",  # Avg total reward
+                        f"{avg_alignment_bonus:.2f}",  # Avg alignment bonus
+                        f"{avg_compliance:.4f}",  # Avg compliance
+                        f"{avg_fixes_per_episode:.2f}"  # Avg fixes per episode
+                    ])
+                    summary_csv_file.flush()
                     
                     print(f"\n  Update {total_steps // self.update_every_steps}: "
                           f"Episodes: {int(total_episodes)} total")
@@ -339,6 +392,12 @@ class ParallelWorkflowRLTrainer:
             max_episodes_reached = True
             print(f"\n  ✗ Max episodes reached without achieving compliance threshold")
             print(f"    Episodes trained: {int(np.mean(episode_counts))} per env")
+        
+        # Close CSV files
+        detailed_csv_file.close()
+        summary_csv_file.close()
+        print(f"  Detailed log saved to: {detailed_log_filename}")
+        print(f"  Summary log saved to: {summary_log_filename}")
         
         # Close environments
         envs.close()
