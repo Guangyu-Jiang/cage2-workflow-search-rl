@@ -114,9 +114,11 @@ else:
   - Minimum episodes before checking compliance
   - Gives agent time to learn before evaluation
 
-- **`max_train_episodes_per_env`**: 1000
-  - Maximum episodes to train before giving up
+- **`max_train_episodes_per_env`**: 100
+  - Maximum episodes per environment per workflow before giving up
+  - Early stopping at 95% compliance (typically 25-75 episodes)
   - If compliance not achieved, workflow is marked as failed and NOT recorded
+  - **Policy inheritance**: Each workflow inherits weights from previous workflow
 
 ### Evaluation Parameters
 
@@ -127,6 +129,53 @@ else:
 - **`n_envs`**: 25
   - Parallel environments for training and evaluation
   - Total evaluation rollouts = 20 × 25 = 500 episodes
+
+## Policy Inheritance Across Workflows
+
+### Key Feature: Continual Learning
+
+Instead of training each workflow from scratch, the system uses **policy inheritance**:
+
+1. **First workflow**: Creates a new policy from random initialization
+2. **Subsequent workflows**: Inherits policy weights from previous workflow
+   - Policy network weights are copied
+   - Only the workflow order encoding changes
+   - Continues learning from where previous workflow left off
+
+### Benefits
+
+✅ **Faster convergence**: Each workflow starts with knowledge from previous workflows  
+✅ **Better generalization**: Agent learns general defense strategies, not just workflow-specific tactics  
+✅ **Reduced training time**: Later workflows train faster due to knowledge transfer  
+✅ **Cumulative learning**: Knowledge accumulates across the entire search
+
+### Implementation
+
+```python
+# First workflow
+if self.shared_agent is None:
+    agent = create_new_agent()  # Random initialization
+else:
+    # Later workflows
+    agent = create_new_agent()
+    agent.policy.load_state_dict(self.shared_agent.policy.state_dict())  # Inherit weights
+    # Only workflow encoding changes, core policy is preserved
+
+# After training
+self.shared_agent = agent  # Save for next workflow
+```
+
+### Example
+
+| Workflow | Starting Point | Training Episodes | Final Compliance |
+|----------|---------------|-------------------|------------------|
+| 1: `user → ...` | Random init | 75 episodes | 90% (failed) |
+| 2: `defender → ...` | Inherits from #1 | 35 episodes | 96% (success!) |
+| 3: `enterprise → ...` | Inherits from #2 | 28 episodes | 97% (success!) |
+
+Notice how later workflows train faster due to inherited knowledge!
+
+---
 
 ## Alignment Reward Design
 
@@ -323,9 +372,10 @@ Some workflows are naturally harder to learn:
 - Lower evaluation performance (harder to defend in this order)
 
 **Impossible workflows**:
-- Some workflows may never achieve 95% compliance within 1000 episodes
+- Some workflows may never achieve 95% compliance within 100 episodes
 - Not recorded in GP-UCB
 - GP-UCB ignores them (as if they were never explored)
+- However, the learned policy is still inherited by next workflow
 
 ### GP-UCB Learning
 

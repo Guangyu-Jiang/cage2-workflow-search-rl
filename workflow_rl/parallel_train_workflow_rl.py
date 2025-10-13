@@ -25,7 +25,7 @@ class ParallelWorkflowRLTrainer:
     def __init__(self, 
                  n_envs: int = 25,
                  n_workflows: int = 20,
-                 max_train_episodes_per_env: int = 1000,  # Max episodes before giving up
+                 max_train_episodes_per_env: int = 100,  # Max episodes before giving up
                  max_steps: int = 100,
                  scenario_path: str = '/home/ubuntu/CAGE2/cage-challenge-2/CybORG/CybORG/Shared/Scenarios/Scenario2.yaml',
                  red_agent_type=RedMeanderAgent,
@@ -78,6 +78,9 @@ class ParallelWorkflowRLTrainer:
         # Training history
         self.training_history = []
         
+        # Store the shared policy across workflows (for policy inheritance)
+        self.shared_agent = None
+        
     def train_workflow_parallel(self, workflow_order: List[str], workflow_vector: np.ndarray,
                                workflow_id: int) -> Tuple[float, float, int, bool]:
         """
@@ -110,19 +113,41 @@ class ParallelWorkflowRLTrainer:
             red_agent_type=self.red_agent_type
         )
         
-        # Create parallel PPO agent
-        agent = ParallelOrderConditionedPPO(
-            input_dims=envs.observation_shape[0],
-            n_envs=self.n_envs,
-            workflow_order=workflow_order,
-            workflow_manager=self.workflow_manager,
-            alignment_lambda=self.alignment_lambda,
-            update_steps=self.update_every_steps,
-            K_epochs=4,
-            eps_clip=0.2,
-            gamma=0.99,
-            lr=0.002
-        )
+        # Create or reuse PPO agent (policy inheritance across workflows)
+        if self.shared_agent is None:
+            # First workflow - create new agent
+            print("  Creating new agent (first workflow)")
+            agent = ParallelOrderConditionedPPO(
+                input_dims=envs.observation_shape[0],
+                n_envs=self.n_envs,
+                workflow_order=workflow_order,
+                workflow_manager=self.workflow_manager,
+                alignment_lambda=self.alignment_lambda,
+                update_steps=self.update_every_steps,
+                K_epochs=4,
+                eps_clip=0.2,
+                gamma=0.99,
+                lr=0.002
+            )
+        else:
+            # Subsequent workflows - inherit policy from previous workflow
+            print("  Inheriting policy from previous workflow")
+            agent = ParallelOrderConditionedPPO(
+                input_dims=envs.observation_shape[0],
+                n_envs=self.n_envs,
+                workflow_order=workflow_order,
+                workflow_manager=self.workflow_manager,
+                alignment_lambda=self.alignment_lambda,
+                update_steps=self.update_every_steps,
+                K_epochs=4,
+                eps_clip=0.2,
+                gamma=0.99,
+                lr=0.002
+            )
+            # Load the shared policy weights
+            agent.policy.load_state_dict(self.shared_agent.policy.state_dict())
+            agent.policy_old.load_state_dict(self.shared_agent.policy_old.state_dict())
+            print("  Policy weights loaded successfully")
         
         # Training metrics
         episode_rewards = [[] for _ in range(self.n_envs)]  # Pure env rewards
@@ -340,6 +365,10 @@ class ParallelWorkflowRLTrainer:
             )
             agent.save(checkpoint_path)
             
+            # Store agent for policy inheritance in next workflow
+            self.shared_agent = agent
+            print(f"  Policy saved for next workflow inheritance")
+            
             print(f"\n{'='*60}")
             print(f"EVALUATION PHASE")
             print(f"{'='*60}")
@@ -360,6 +389,9 @@ class ParallelWorkflowRLTrainer:
             print(f"\n  ✗ Training failed - compliance threshold not achieved")
             print(f"  Final compliance: {final_training_compliance:.2%}")
             print(f"  Assigning penalty reward: {eval_reward:.2f}")
+            # Still store the agent for potential learning transfer
+            self.shared_agent = agent
+            print(f"  Policy still saved for next workflow (partial learning may help)")
         
         return eval_reward, final_training_compliance, int(np.mean(episode_counts)), compliance_achieved
     
@@ -632,7 +664,7 @@ def main():
     trainer = ParallelWorkflowRLTrainer(
         n_envs=25,  # 25 parallel environments
         n_workflows=20,
-        max_train_episodes_per_env=1000,  # Max episodes to train before giving up
+        max_train_episodes_per_env=100,  # Max episodes per env per workflow (early stop at 95%)
         max_steps=100,
         alignment_lambda=30.0,  # Increased for stricter compliance (was 10.0)
         gp_beta=2.0,
