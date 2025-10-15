@@ -111,13 +111,11 @@ python workflow_rl/parallel_train_workflow_rl.py --n-eval-episodes 10
 
 ### Output Configuration
 
-#### `--checkpoint-dir` (Save Directory)
+#### `--checkpoint-dir` (Legacy - not used for new logs)
 ```bash
-# Custom save directory
-python workflow_rl/parallel_train_workflow_rl.py --checkpoint-dir my_experiment_1
-
-# Separate directories for different experiments
-python workflow_rl/parallel_train_workflow_rl.py --checkpoint-dir bline_agent_test
+# Note: This parameter is kept for backwards compatibility
+# All experiments are now saved to logs/exp_YYYYMMDD_HHMMSS/
+# regardless of this parameter value
 ```
 
 #### `--seed` (Random Seed)
@@ -139,8 +137,8 @@ python workflow_rl/parallel_train_workflow_rl.py \
     --n-envs 10 \
     --n-workflows 3 \
     --max-episodes 30 \
-    --compliance-threshold 0.90 \
-    --checkpoint-dir quick_test
+    --compliance-threshold 0.90
+# Creates: logs/exp_YYYYMMDD_HHMMSS/
 ```
 
 ### Thorough Search (Strict Compliance)
@@ -150,8 +148,8 @@ python workflow_rl/parallel_train_workflow_rl.py \
     --n-workflows 50 \
     --max-episodes 200 \
     --alignment-lambda 50.0 \
-    --compliance-threshold 0.98 \
-    --checkpoint-dir strict_search
+    --compliance-threshold 0.98
+# Creates: logs/exp_YYYYMMDD_HHMMSS/
 ```
 
 ### Compare Red Agents
@@ -159,14 +157,14 @@ python workflow_rl/parallel_train_workflow_rl.py \
 # Experiment 1: RedMeanderAgent
 python workflow_rl/parallel_train_workflow_rl.py \
     --red-agent meander \
-    --checkpoint-dir exp_meander \
     --seed 42
+# Creates: logs/exp_YYYYMMDD_HHMMSS/
 
 # Experiment 2: B_lineAgent
 python workflow_rl/parallel_train_workflow_rl.py \
     --red-agent bline \
-    --checkpoint-dir exp_bline \
     --seed 42
+# Creates: logs/exp_YYYYMMDD_HHMMSS/
 ```
 
 ### Fast Prototyping
@@ -177,8 +175,8 @@ python workflow_rl/parallel_train_workflow_rl.py \
     --max-episodes 20 \
     --min-episodes 10 \
     --compliance-threshold 0.85 \
-    --n-eval-episodes 5 \
-    --checkpoint-dir prototype
+    --n-eval-episodes 5
+# Creates: logs/exp_YYYYMMDD_HHMMSS/
 ```
 
 ---
@@ -198,8 +196,10 @@ python workflow_rl/parallel_train_workflow_rl.py \
 | `--update-steps` | `100` | PPO update frequency |
 | `--gp-beta` | `2.0` | GP-UCB exploration |
 | `--n-eval-episodes` | `20` | Evaluation episodes |
-| `--checkpoint-dir` | `compliance_checkpoints` | Save directory |
+| `--checkpoint-dir` | `compliance_checkpoints` | Legacy (not used) |
 | `--seed` | `42` | Random seed |
+
+**Note**: All experiments are automatically saved to `logs/exp_YYYYMMDD_HHMMSS/`
 
 ---
 
@@ -211,13 +211,15 @@ For first-time users, run with defaults:
 python workflow_rl/parallel_train_workflow_rl.py
 ```
 
-### 2. Use Descriptive Checkpoint Directories
+### 2. Experiments Are Auto-Named
+Each experiment automatically gets a unique timestamped directory:
 ```bash
-# Good: Describes the experiment
-python workflow_rl/parallel_train_workflow_rl.py --checkpoint-dir lambda30_threshold95_meander
+# Just run - directory created automatically
+python workflow_rl/parallel_train_workflow_rl.py
 
-# Bad: Generic name
-python workflow_rl/parallel_train_workflow_rl.py --checkpoint-dir test1
+# Creates: logs/exp_20241015_143022/
+# Browse all experiments later:
+python workflow_rl/browse_experiments.py --list
 ```
 
 ### 3. Adjust Compliance Threshold Based on Red Agent
@@ -232,13 +234,19 @@ python workflow_rl/parallel_train_workflow_rl.py --red-agent bline --compliance-
 ### 4. Use Different Seeds for Multiple Runs
 ```bash
 # Run 1
-python workflow_rl/parallel_train_workflow_rl.py --seed 1 --checkpoint-dir run1
+python workflow_rl/parallel_train_workflow_rl.py --seed 1
+# Creates: logs/exp_20241015_143022/
 
-# Run 2
-python workflow_rl/parallel_train_workflow_rl.py --seed 2 --checkpoint-dir run2
+# Run 2  
+python workflow_rl/parallel_train_workflow_rl.py --seed 2
+# Creates: logs/exp_20241015_143105/
 
 # Run 3
-python workflow_rl/parallel_train_workflow_rl.py --seed 3 --checkpoint-dir run3
+python workflow_rl/parallel_train_workflow_rl.py --seed 3
+# Creates: logs/exp_20241015_143148/
+
+# Compare all runs
+python workflow_rl/browse_experiments.py --compare exp_20241015_143022 exp_20241015_143105 exp_20241015_143148
 ```
 
 ---
@@ -276,7 +284,9 @@ python workflow_rl/parallel_train_workflow_rl.py \
     --update-steps 100 \
     --gp-beta 2.0 \
     --n-eval-episodes 20 \
-    --checkpoint-dir my_experiment \
     --seed 42
+
+# Creates: logs/exp_YYYYMMDD_HHMMSS/
+# Browse results: python workflow_rl/browse_experiments.py --latest
 ```
 

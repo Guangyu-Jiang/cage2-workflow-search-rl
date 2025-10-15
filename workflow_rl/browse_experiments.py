@@ -11,9 +11,8 @@ from datetime import datetime
 from pathlib import Path
 import argparse
 
-def list_experiments(base_dir: str = "compliance_checkpoints"):
+def list_experiments(logs_dir: str = "logs"):
     """List all experiments in the logs directory"""
-    logs_dir = os.path.join(base_dir, "logs")
     
     if not os.path.exists(logs_dir):
         print(f"No logs directory found at {logs_dir}")
@@ -160,8 +159,8 @@ def compare_experiments(exp_paths: list):
 
 def main():
     parser = argparse.ArgumentParser(description='Browse and compare experiments')
-    parser.add_argument('--base-dir', default='compliance_checkpoints',
-                       help='Base checkpoint directory')
+    parser.add_argument('--logs-dir', default='logs',
+                       help='Logs directory (default: logs)')
     parser.add_argument('--list', action='store_true',
                        help='List all experiments')
     parser.add_argument('--show', type=str,
@@ -174,10 +173,10 @@ def main():
     args = parser.parse_args()
     
     if args.list:
-        experiments = list_experiments(args.base_dir)
+        experiments = list_experiments(args.logs_dir)
         if experiments:
             print(f"\n{'='*80}")
-            print(f"Available Experiments in {args.base_dir}/logs/")
+            print(f"Available Experiments in {args.logs_dir}/")
             print(f"{'='*80}")
             print(f"{'Name':<25} {'Timestamp':<20} {'Red Agent':<15} {'Workflows':<10} {'Threshold':<10}")
             print("-" * 80)
@@ -196,16 +195,14 @@ def main():
             print(f"Use --compare <exp1> <exp2> ... to compare multiple experiments")
     
     elif args.show:
-        logs_dir = os.path.join(args.base_dir, "logs")
-        exp_path = os.path.join(logs_dir, args.show)
+        exp_path = os.path.join(args.logs_dir, args.show)
         if os.path.exists(exp_path):
             show_experiment_summary(exp_path)
         else:
-            print(f"Experiment '{args.show}' not found in {logs_dir}")
+            print(f"Experiment '{args.show}' not found in {args.logs_dir}")
     
     elif args.compare:
-        logs_dir = os.path.join(args.base_dir, "logs")
-        exp_paths = [os.path.join(logs_dir, exp) for exp in args.compare]
+        exp_paths = [os.path.join(args.logs_dir, exp) for exp in args.compare]
         valid_paths = [p for p in exp_paths if os.path.exists(p)]
         
         if valid_paths:
@@ -214,7 +211,7 @@ def main():
             print("No valid experiments found to compare")
     
     elif args.latest:
-        experiments = list_experiments(args.base_dir)
+        experiments = list_experiments(args.logs_dir)
         if experiments:
             # Sort by name (which includes timestamp)
             latest = sorted(experiments, key=lambda x: x['name'])[-1]

@@ -68,10 +68,11 @@ class ParallelWorkflowRLTrainer:
         # Create experiment-specific directory with timestamp
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         self.experiment_name = f"exp_{timestamp}"
-        self.checkpoint_dir = os.path.join(checkpoint_dir, "logs", self.experiment_name)
+        # Create logs directory at the same level as checkpoint_dir
+        self.checkpoint_dir = os.path.join("logs", self.experiment_name)
         os.makedirs(self.checkpoint_dir, exist_ok=True)
         
-        # Store base directory for reference
+        # Store base directory for reference (for backwards compatibility)
         self.base_checkpoint_dir = checkpoint_dir
         
         # Initialize workflow manager
