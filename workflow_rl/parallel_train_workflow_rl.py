@@ -65,9 +65,14 @@ class ParallelWorkflowRLTrainer:
         self.n_eval_episodes = n_eval_episodes
         self.update_every_steps = update_every_steps
         
-        # Create checkpoint directory
-        self.checkpoint_dir = checkpoint_dir
-        os.makedirs(checkpoint_dir, exist_ok=True)
+        # Create experiment-specific directory with timestamp
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        self.experiment_name = f"exp_{timestamp}"
+        self.checkpoint_dir = os.path.join(checkpoint_dir, "logs", self.experiment_name)
+        os.makedirs(self.checkpoint_dir, exist_ok=True)
+        
+        # Store base directory for reference
+        self.base_checkpoint_dir = checkpoint_dir
         
         # Initialize workflow manager
         self.workflow_manager = OrderBasedWorkflow()
@@ -90,11 +95,7 @@ class ParallelWorkflowRLTrainer:
     
     def _init_consolidated_logging(self):
         """Initialize the consolidated CSV log file"""
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        log_filename = os.path.join(
-            self.checkpoint_dir,
-            f"training_log_{timestamp}.csv"
-        )
+        log_filename = os.path.join(self.checkpoint_dir, "training_log.csv")
         self.consolidated_log_file = open(log_filename, 'w', newline='')
         self.consolidated_csv_writer = csv.writer(self.consolidated_log_file)
         # Write header
@@ -104,7 +105,45 @@ class ParallelWorkflowRLTrainer:
             'Compliance', 'Fixes', 'Steps', 'Success', 'Eval_Reward'
         ])
         self.consolidated_log_file.flush()
-        print(f"Consolidated training log: {log_filename}")
+        
+        # Save experiment configuration
+        self._save_experiment_config()
+        
+        print(f"Experiment directory: {self.checkpoint_dir}")
+        print(f"Training log: {log_filename}")
+    
+    def _save_experiment_config(self):
+        """Save experiment configuration to JSON file"""
+        config = {
+            'experiment_name': self.experiment_name,
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'environment': {
+                'n_envs': self.n_envs,
+                'max_steps': self.max_steps,
+                'red_agent_type': self.red_agent_type.__name__,
+                'scenario': str(self.scenario_path)
+            },
+            'training': {
+                'n_workflows': self.n_workflows,
+                'max_train_episodes_per_env': self.max_train_episodes_per_env,
+                'compliance_threshold': self.compliance_threshold,
+                'min_episodes': self.min_episodes,
+                'update_every_steps': self.update_every_steps,
+                'n_eval_episodes': self.n_eval_episodes
+            },
+            'rewards': {
+                'alignment_lambda': self.alignment_lambda
+            },
+            'search': {
+                'gp_beta': self.gp_search.beta if hasattr(self.gp_search, 'beta') else 2.0
+            }
+        }
+        
+        config_file = os.path.join(self.checkpoint_dir, 'experiment_config.json')
+        with open(config_file, 'w') as f:
+            json.dump(config, f, indent=2)
+        
+        print(f"Experiment config: {config_file}")
         
     def train_workflow_parallel(self, workflow_order: List[str], workflow_vector: np.ndarray,
                                workflow_id: int) -> Tuple[float, float, int, bool]:
@@ -567,12 +606,17 @@ class ParallelWorkflowRLTrainer:
         print(f"\n{'='*60}")
         print(f"Compliance-Gated Workflow Search")
         print(f"{'='*60}")
-        print(f"Number of parallel environments: {self.n_envs}")
-        print(f"Number of workflows to explore: {self.n_workflows}")
-        print(f"Max episodes per environment: {self.max_train_episodes_per_env}")
-        print(f"Compliance threshold: {self.compliance_threshold:.1%}")
-        print(f"Evaluation episodes: {self.n_eval_episodes} per env")
-        print(f"Alignment lambda: {self.alignment_lambda}")
+        print(f"Experiment: {self.experiment_name}")
+        print(f"Directory: {self.checkpoint_dir}")
+        print(f"{'='*60}")
+        print(f"Configuration:")
+        print(f"  Red Agent: {self.red_agent_type.__name__}")
+        print(f"  Parallel Environments: {self.n_envs}")
+        print(f"  Workflows to Explore: {self.n_workflows}")
+        print(f"  Max Episodes per Env: {self.max_train_episodes_per_env}")
+        print(f"  Compliance Threshold: {self.compliance_threshold:.1%}")
+        print(f"  Alignment Lambda: {self.alignment_lambda}")
+        print(f"  Evaluation Episodes: {self.n_eval_episodes} per env")
         print(f"\nTraining Strategy:")
         print(f"  1. Train with alignment rewards until compliance >= {self.compliance_threshold:.1%}")
         print(f"  2. Evaluate on pure environment reward")
@@ -707,12 +751,62 @@ class ParallelWorkflowRLTrainer:
     
     def save_results(self):
         """Save training history to file"""
-        results_path = os.path.join(self.checkpoint_dir, 'parallel_training_history.json')
+        results_path = os.path.join(self.checkpoint_dir, 'training_history.json')
         
         with open(results_path, 'w') as f:
             json.dump(self.training_history, f, indent=2)
         
+        # Also save a summary file with best workflows
+        self._save_summary()
+        
         print(f"  Results saved to {results_path}")
+    
+    def _save_summary(self):
+        """Save a human-readable summary of the experiment"""
+        summary_path = os.path.join(self.checkpoint_dir, 'summary.txt')
+        
+        with open(summary_path, 'w') as f:
+            f.write(f"Experiment: {self.experiment_name}\n")
+            f.write(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write("="*60 + "\n\n")
+            
+            # Configuration summary
+            f.write("Configuration:\n")
+            f.write(f"  Red Agent: {self.red_agent_type.__name__}\n")
+            f.write(f"  Parallel Envs: {self.n_envs}\n")
+            f.write(f"  Workflows Explored: {len(self.training_history)}\n")
+            f.write(f"  Compliance Threshold: {self.compliance_threshold:.1%}\n")
+            f.write(f"  Alignment Lambda: {self.alignment_lambda}\n")
+            f.write("\n")
+            
+            # Results summary
+            successful = [r for r in self.training_history if r['success']]
+            f.write("Results:\n")
+            f.write(f"  Total Workflows: {len(self.training_history)}\n")
+            f.write(f"  Successful: {len(successful)}\n")
+            f.write(f"  Success Rate: {len(successful)/len(self.training_history):.1%}\n")
+            f.write("\n")
+            
+            # Best workflows
+            if successful:
+                sorted_successful = sorted(successful, key=lambda x: x['eval_reward'], reverse=True)
+                f.write("Top 5 Successful Workflows:\n")
+                for i, result in enumerate(sorted_successful[:5], 1):
+                    f.write(f"\n  {i}. {' → '.join(result['workflow'])}\n")
+                    f.write(f"     Eval Reward: {result['eval_reward']:.2f}\n")
+                    f.write(f"     Compliance: {result['train_compliance']:.2%}\n")
+                    f.write(f"     Episodes: {result['avg_episodes_trained']}\n")
+            else:
+                f.write("No successful workflows found.\n")
+            
+            # Best overall (from GP-UCB)
+            if self.gp_search.observed_orders:
+                best_idx = np.argmax(self.gp_search.observed_rewards)
+                best_workflow = self.gp_search.observed_orders[best_idx]
+                best_reward = self.gp_search.observed_rewards[best_idx]
+                f.write(f"\nBest Workflow (GP-UCB):\n")
+                f.write(f"  {' → '.join(best_workflow)}\n")
+                f.write(f"  Reward: {best_reward:.2f}\n")
     
     def print_summary(self):
         """Print final summary of training"""
