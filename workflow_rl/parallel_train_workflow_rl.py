@@ -83,6 +83,29 @@ class ParallelWorkflowRLTrainer:
         # Store the shared policy across workflows (for policy inheritance)
         self.shared_agent = None
         
+        # Initialize consolidated CSV logging
+        self.consolidated_log_file = None
+        self.consolidated_csv_writer = None
+        self._init_consolidated_logging()
+    
+    def _init_consolidated_logging(self):
+        """Initialize the consolidated CSV log file"""
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        log_filename = os.path.join(
+            self.checkpoint_dir,
+            f"training_log_{timestamp}.csv"
+        )
+        self.consolidated_log_file = open(log_filename, 'w', newline='')
+        self.consolidated_csv_writer = csv.writer(self.consolidated_log_file)
+        # Write header
+        self.consolidated_csv_writer.writerow([
+            'Workflow_ID', 'Workflow_Order', 'Type', 'Episode', 'Total_Episodes', 
+            'Env_ID', 'Env_Reward', 'Total_Reward', 'Alignment_Bonus', 
+            'Compliance', 'Fixes', 'Steps', 'Success', 'Eval_Reward'
+        ])
+        self.consolidated_log_file.flush()
+        print(f"Consolidated training log: {log_filename}")
+        
     def train_workflow_parallel(self, workflow_order: List[str], workflow_vector: np.ndarray,
                                workflow_id: int) -> Tuple[float, float, int, bool]:
         """
@@ -108,20 +131,7 @@ class ParallelWorkflowRLTrainer:
         print(f"Using {self.n_envs} parallel environments")
         print(f"{'='*60}")
         
-        # Create single CSV log file for this workflow
-        log_filename = os.path.join(
-            self.checkpoint_dir,
-            f"workflow_{workflow_id}_training_log.csv"
-        )
-        csv_file = open(log_filename, 'w', newline='')
-        csv_writer = csv.writer(csv_file)
-        # Write header with all columns
-        csv_writer.writerow([
-            'Type', 'Episode', 'Total_Episodes', 'Env_ID', 
-            'Env_Reward', 'Total_Reward', 'Alignment_Bonus', 
-            'Compliance', 'Fixes', 'Steps'
-        ])
-        print(f"  Training log: {log_filename}")
+        workflow_str = ' → '.join(workflow_order)
         
         # Create parallel environments
         envs = ParallelEnvWrapper(
@@ -268,8 +278,10 @@ class ParallelWorkflowRLTrainer:
                         # Increment episode count
                         episode_counts[env_idx] += 1
                         
-                        # Log episode to CSV file
-                        csv_writer.writerow([
+                        # Log episode to consolidated CSV file
+                        self.consolidated_csv_writer.writerow([
+                            workflow_id,  # Workflow ID
+                            workflow_str,  # Workflow order string
                             'episode',  # Type
                             episode_counts[env_idx],  # Episode number for this env
                             '',  # Total_Episodes (only for summary rows)
@@ -279,9 +291,11 @@ class ParallelWorkflowRLTrainer:
                             f"{current_episode_alignment_bonus[env_idx]:.2f}",  # Alignment bonus
                             f"{compliance:.4f}",  # Compliance rate
                             fixes_this_episode,  # Number of fixes
-                            current_episode_steps[env_idx]  # Steps taken
+                            current_episode_steps[env_idx],  # Steps taken
+                            '',  # Success (only for summary rows)
+                            ''  # Eval_Reward (only for summary rows)
                         ])
-                        csv_file.flush()  # Ensure data is written immediately
+                        self.consolidated_log_file.flush()  # Ensure data is written immediately
                         
                         # Reset episode tracking
                         current_episode_rewards[env_idx] = 0
@@ -325,8 +339,10 @@ class ParallelWorkflowRLTrainer:
                     avg_compliance = np.mean(all_compliances)
                     avg_fixes_per_episode = np.mean(all_fixes_per_episode) if all_fixes_per_episode else 0
                     
-                    # Log summary to CSV
-                    csv_writer.writerow([
+                    # Log summary to consolidated CSV
+                    self.consolidated_csv_writer.writerow([
+                        workflow_id,  # Workflow ID
+                        workflow_str,  # Workflow order string
                         'summary',  # Type
                         '',  # Episode (only for episode rows)
                         int(total_episodes),  # Total episodes
@@ -336,9 +352,11 @@ class ParallelWorkflowRLTrainer:
                         f"{avg_alignment_bonus:.2f}",  # Avg alignment bonus
                         f"{avg_compliance:.4f}",  # Avg compliance
                         f"{avg_fixes_per_episode:.2f}",  # Avg fixes per episode
-                        ''  # Steps (only for episode rows)
+                        '',  # Steps (only for episode rows)
+                        '',  # Success (filled later)
+                        ''  # Eval_Reward (filled later)
                     ])
-                    csv_file.flush()
+                    self.consolidated_log_file.flush()
                     
                     print(f"\n  Update {total_steps // self.update_every_steps}: "
                           f"Episodes: {int(total_episodes)} total")
@@ -444,6 +462,25 @@ class ParallelWorkflowRLTrainer:
             # Still store the agent for potential learning transfer
             self.shared_agent = agent
             print(f"  Policy still saved for next workflow (partial learning may help)")
+        
+        # Log workflow completion summary
+        self.consolidated_csv_writer.writerow([
+            workflow_id,  # Workflow ID
+            workflow_str,  # Workflow order string
+            'workflow_complete',  # Type
+            '',  # Episode
+            int(total_episodes),  # Total episodes trained
+            '',  # Env_ID
+            '',  # Env reward
+            '',  # Total reward
+            '',  # Alignment bonus
+            f"{final_training_compliance:.4f}",  # Final compliance
+            '',  # Fixes
+            '',  # Steps
+            'Yes' if compliance_achieved else 'No',  # Success
+            f"{eval_reward:.2f}"  # Eval_Reward
+        ])
+        self.consolidated_log_file.flush()
         
         return eval_reward, final_training_compliance, int(np.mean(episode_counts)), compliance_achieved
     
@@ -663,6 +700,11 @@ class ParallelWorkflowRLTrainer:
         print(f"\n{'='*60}")
         print(f"Training Complete!")
         print(f"{'='*60}")
+        
+        # Close consolidated log file
+        if self.consolidated_log_file:
+            self.consolidated_log_file.close()
+            print(f"  Consolidated log saved")
         
         # Final summary
         self.print_summary()
