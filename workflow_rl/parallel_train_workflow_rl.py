@@ -406,10 +406,6 @@ class ParallelWorkflowRLTrainer:
             print(f"\n  ✗ Max episodes reached without achieving compliance threshold")
             print(f"    Episodes trained: {int(np.mean(episode_counts))} per env")
         
-        # Close CSV file
-        csv_file.close()
-        print(f"  Training log saved to: {log_filename}")
-        
         # Close environments
         envs.close()
         
