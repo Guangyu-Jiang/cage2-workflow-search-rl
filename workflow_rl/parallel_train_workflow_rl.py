@@ -65,12 +65,15 @@ class ParallelWorkflowRLTrainer:
         self.n_eval_episodes = n_eval_episodes
         self.update_every_steps = update_every_steps
         
-        # Create experiment-specific directory with timestamp
+        # Create experiment-specific directory with timestamp and PID
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        self.experiment_name = f"exp_{timestamp}"
+        pid = os.getpid()
+        self.experiment_name = f"exp_{timestamp}_{pid}"
         # Create logs directory at the same level as checkpoint_dir
         self.checkpoint_dir = os.path.join("logs", self.experiment_name)
         os.makedirs(self.checkpoint_dir, exist_ok=True)
+        
+        print(f"Starting experiment with PID: {pid}")
         
         # Store base directory for reference (for backwards compatibility)
         self.base_checkpoint_dir = checkpoint_dir
@@ -93,6 +96,11 @@ class ParallelWorkflowRLTrainer:
         self.consolidated_log_file = None
         self.consolidated_csv_writer = None
         self._init_consolidated_logging()
+        
+        # Initialize GP-UCB sampling CSV logging
+        self.gp_sampling_file = None
+        self.gp_sampling_writer = None
+        self._init_gp_sampling_log()
     
     def _init_consolidated_logging(self):
         """Initialize the consolidated CSV log file"""
@@ -113,10 +121,27 @@ class ParallelWorkflowRLTrainer:
         print(f"Experiment directory: {self.checkpoint_dir}")
         print(f"Training log: {log_filename}")
     
+    def _init_gp_sampling_log(self):
+        """Initialize the GP-UCB sampling CSV log file"""
+        gp_log_filename = os.path.join(self.checkpoint_dir, "gp_sampling_log.csv")
+        self.gp_sampling_file = open(gp_log_filename, 'w', newline='')
+        self.gp_sampling_writer = csv.writer(self.gp_sampling_file)
+        # Write header
+        self.gp_sampling_writer.writerow([
+            'Iteration', 'Selected_Workflow', 'UCB_Score', 
+            'Top1_Workflow', 'Top1_UCB', 'Top1_Mean', 'Top1_Std',
+            'Top2_Workflow', 'Top2_UCB', 'Top2_Mean', 'Top2_Std',
+            'Top3_Workflow', 'Top3_UCB', 'Top3_Mean', 'Top3_Std',
+            'Selection_Method', 'Exploitation_Value', 'Exploration_Bonus'
+        ])
+        self.gp_sampling_file.flush()
+        print(f"GP-UCB sampling log: {gp_log_filename}")
+    
     def _save_experiment_config(self):
         """Save experiment configuration to JSON file"""
         config = {
             'experiment_name': self.experiment_name,
+            'pid': os.getpid(),
             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'environment': {
                 'n_envs': self.n_envs,
@@ -145,6 +170,41 @@ class ParallelWorkflowRLTrainer:
             json.dump(config, f, indent=2)
         
         print(f"Experiment config: {config_file}")
+    
+    def _log_gp_sampling(self, iteration: int, selected_workflow: List[str], 
+                        ucb_score: float, info: Dict):
+        """Log GP-UCB sampling decision to CSV"""
+        row = [iteration, ' → '.join(selected_workflow), f"{ucb_score:.3f}"]
+        
+        # Get top 3 candidates from info
+        top_candidates = info.get('top_3_candidates', [])
+        
+        # Fill in top 3 choices
+        for i in range(3):
+            if i < len(top_candidates):
+                candidate = top_candidates[i]
+                row.extend([
+                    ' → '.join(candidate['order']) if isinstance(candidate['order'], list) else candidate['order'],
+                    f"{candidate['ucb']:.3f}",
+                    f"{candidate['mean']:.3f}",
+                    f"{candidate['std']:.3f}"
+                ])
+            else:
+                row.extend(['', '', '', ''])  # Empty if less than 3 candidates
+        
+        # Add selection method and other info
+        selection_method = info.get('selection_method', 'gp-ucb')
+        exploitation_value = info.get('exploitation_value', '')
+        exploration_bonus = info.get('exploration_bonus', '')
+        
+        row.extend([
+            selection_method,
+            f"{exploitation_value:.3f}" if exploitation_value != '' else '',
+            f"{exploration_bonus:.3f}" if exploration_bonus != '' else ''
+        ])
+        
+        self.gp_sampling_writer.writerow(row)
+        self.gp_sampling_file.flush()
         
     def train_workflow_parallel(self, workflow_order: List[str], workflow_vector: np.ndarray,
                                workflow_id: int) -> Tuple[float, float, int, bool]:
@@ -682,6 +742,9 @@ class ParallelWorkflowRLTrainer:
             
             print("-"*50)
             
+            # Log GP-UCB sampling decision
+            self._log_gp_sampling(iteration, workflow_order, ucb_score, info)
+            
             # Convert to workflow vector (one-hot encoding)
             workflow_vector = self.workflow_manager.order_to_onehot(workflow_order)
             
@@ -746,6 +809,11 @@ class ParallelWorkflowRLTrainer:
         if self.consolidated_log_file:
             self.consolidated_log_file.close()
             print(f"  Consolidated log saved")
+        
+        # Close GP sampling log file
+        if self.gp_sampling_file:
+            self.gp_sampling_file.close()
+            print(f"  GP sampling log saved")
         
         # Final summary
         self.print_summary()
@@ -851,7 +919,7 @@ def parse_args():
                           help='Number of parallel environments')
     env_group.add_argument('--n-workflows', type=int, default=20,
                           help='Number of workflows to explore')
-    env_group.add_argument('--max-episodes', type=int, default=100,
+    env_group.add_argument('--max-episodes', type=int, default=400,
                           help='Max episodes per environment per workflow')
     env_group.add_argument('--max-steps', type=int, default=100,
                           help='Max steps per episode')
@@ -865,7 +933,7 @@ def parse_args():
                             help='Compliance reward strength (higher = stricter)')
     learn_group.add_argument('--compliance-threshold', type=float, default=0.95,
                             help='Required compliance before evaluation (0.0-1.0)')
-    learn_group.add_argument('--min-episodes', type=int, default=25,
+    learn_group.add_argument('--min-episodes', type=int, default=10,
                             help='Min episodes before checking compliance')
     learn_group.add_argument('--update-steps', type=int, default=100,
                             help='PPO update frequency (steps)')

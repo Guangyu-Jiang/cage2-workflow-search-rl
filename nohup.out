@@ -29406,3 +29406,763 @@ Goal: Train until compliance >= 95.0%
 Using 25 parallel environments
 ============================================================
   Training log: exp_bline/workflow_17_training_log.csv
+  Inheriting policy from previous workflow
+  Policy weights loaded successfully
+
+  Update 0: Episodes: 25 total
+    Env Reward/Episode: -955.60
+    Total Reward/Episode: -932.63
+    Alignment Bonus (episode-end): +22.97
+    Compliance: 76.55%
+    Avg Fixes/Episode: 11.2
+
+  Update 1: Episodes: 50 total
+    Env Reward/Episode: -1076.48
+    Total Reward/Episode: -1054.79
+    Alignment Bonus (episode-end): +21.69
+    Compliance: 72.29%
+    Avg Fixes/Episode: 12.6
+
+  Update 2: Episodes: 75 total
+    Env Reward/Episode: -1054.99
+    Total Reward/Episode: -1031.39
+    Alignment Bonus (episode-end): +23.60
+    Compliance: 78.68%
+    Avg Fixes/Episode: 14.0
+
+  Update 3: Episodes: 100 total
+    Env Reward/Episode: -981.56
+    Total Reward/Episode: -959.01
+    Alignment Bonus (episode-end): +22.56
+    Compliance: 75.19%
+    Avg Fixes/Episode: 15.8
+
+  Update 4: Episodes: 125 total
+    Env Reward/Episode: -884.76
+    Total Reward/Episode: -860.66
+    Alignment Bonus (episode-end): +24.10
+    Compliance: 80.33%
+    Avg Fixes/Episode: 15.7
+
+  Update 5: Episodes: 150 total
+    Env Reward/Episode: -710.83
+    Total Reward/Episode: -684.54
+    Alignment Bonus (episode-end): +26.29
+    Compliance: 87.62%
+    Avg Fixes/Episode: 19.1
+
+  Update 6: Episodes: 175 total
+    Env Reward/Episode: -522.05
+    Total Reward/Episode: -495.69
+    Alignment Bonus (episode-end): +26.36
+    Compliance: 87.86%
+    Avg Fixes/Episode: 15.6
+
+  Update 7: Episodes: 200 total
+    Env Reward/Episode: -456.81
+    Total Reward/Episode: -433.64
+    Alignment Bonus (episode-end): +23.17
+    Compliance: 77.23%
+    Avg Fixes/Episode: 16.3
+
+  Update 8: Episodes: 225 total
+    Env Reward/Episode: -358.32
+    Total Reward/Episode: -332.96
+    Alignment Bonus (episode-end): +25.36
+    Compliance: 84.52%
+    Avg Fixes/Episode: 16.8
+
+  Update 9: Episodes: 250 total
+    Env Reward/Episode: -311.08
+    Total Reward/Episode: -286.68
+    Alignment Bonus (episode-end): +24.40
+    Compliance: 81.35%
+    Avg Fixes/Episode: 17.0
+
+  Update 10: Episodes: 275 total
+    Env Reward/Episode: -285.37
+    Total Reward/Episode: -260.16
+    Alignment Bonus (episode-end): +25.21
+    Compliance: 84.05%
+    Avg Fixes/Episode: 18.2
+
+  Update 11: Episodes: 300 total
+    Env Reward/Episode: -249.88
+    Total Reward/Episode: -224.12
+    Alignment Bonus (episode-end): +25.76
+    Compliance: 85.88%
+    Avg Fixes/Episode: 18.2
+
+  Update 12: Episodes: 325 total
+    Env Reward/Episode: -229.16
+    Total Reward/Episode: -204.53
+    Alignment Bonus (episode-end): +24.63
+    Compliance: 82.11%
+    Avg Fixes/Episode: 17.9
+
+  Update 13: Episodes: 350 total
+    Env Reward/Episode: -202.12
+    Total Reward/Episode: -177.29
+    Alignment Bonus (episode-end): +24.83
+    Compliance: 82.76%
+    Avg Fixes/Episode: 16.7
+
+  Update 14: Episodes: 375 total
+    Env Reward/Episode: -199.48
+    Total Reward/Episode: -174.79
+    Alignment Bonus (episode-end): +24.69
+    Compliance: 82.31%
+    Avg Fixes/Episode: 18.7
+
+  Update 15: Episodes: 400 total
+    Env Reward/Episode: -198.58
+    Total Reward/Episode: -173.77
+    Alignment Bonus (episode-end): +24.82
+    Compliance: 82.72%
+    Avg Fixes/Episode: 19.2
+
+  Update 16: Episodes: 425 total
+    Env Reward/Episode: -196.80
+    Total Reward/Episode: -172.55
+    Alignment Bonus (episode-end): +24.25
+    Compliance: 80.83%
+    Avg Fixes/Episode: 17.1
+
+  Update 17: Episodes: 450 total
+    Env Reward/Episode: -201.84
+    Total Reward/Episode: -178.72
+    Alignment Bonus (episode-end): +23.12
+    Compliance: 77.07%
+    Avg Fixes/Episode: 16.2
+
+  Update 18: Episodes: 475 total
+    Env Reward/Episode: -199.60
+    Total Reward/Episode: -176.26
+    Alignment Bonus (episode-end): +23.34
+    Compliance: 77.81%
+    Avg Fixes/Episode: 16.9
+
+  Update 19: Episodes: 500 total
+    Env Reward/Episode: -203.32
+    Total Reward/Episode: -179.72
+    Alignment Bonus (episode-end): +23.60
+    Compliance: 78.66%
+    Avg Fixes/Episode: 16.3
+
+  Update 20: Episodes: 525 total
+    Env Reward/Episode: -187.88
+    Total Reward/Episode: -163.52
+    Alignment Bonus (episode-end): +24.36
+    Compliance: 81.19%
+    Avg Fixes/Episode: 20.6
+
+  Update 21: Episodes: 550 total
+    Env Reward/Episode: -168.64
+    Total Reward/Episode: -143.33
+    Alignment Bonus (episode-end): +25.31
+    Compliance: 84.36%
+    Avg Fixes/Episode: 23.3
+
+  Update 22: Episodes: 575 total
+    Env Reward/Episode: -171.72
+    Total Reward/Episode: -146.78
+    Alignment Bonus (episode-end): +24.94
+    Compliance: 83.13%
+    Avg Fixes/Episode: 21.7
+
+  Update 23: Episodes: 600 total
+    Env Reward/Episode: -171.04
+    Total Reward/Episode: -145.59
+    Alignment Bonus (episode-end): +25.45
+    Compliance: 84.83%
+    Avg Fixes/Episode: 21.7
+
+  Update 24: Episodes: 625 total
+    Env Reward/Episode: -172.60
+    Total Reward/Episode: -147.91
+    Alignment Bonus (episode-end): +24.69
+    Compliance: 82.31%
+    Avg Fixes/Episode: 21.3
+
+  Update 25: Episodes: 650 total
+    Env Reward/Episode: -180.80
+    Total Reward/Episode: -155.63
+    Alignment Bonus (episode-end): +25.16
+    Compliance: 83.87%
+    Avg Fixes/Episode: 20.8
+
+  Update 26: Episodes: 675 total
+    Env Reward/Episode: -186.87
+    Total Reward/Episode: -162.74
+    Alignment Bonus (episode-end): +24.13
+    Compliance: 80.42%
+    Avg Fixes/Episode: 21.4
+
+  Update 27: Episodes: 700 total
+    Env Reward/Episode: -186.56
+    Total Reward/Episode: -161.43
+    Alignment Bonus (episode-end): +25.13
+    Compliance: 83.76%
+    Avg Fixes/Episode: 21.6
+
+  Update 28: Episodes: 725 total
+    Env Reward/Episode: -187.40
+    Total Reward/Episode: -162.09
+    Alignment Bonus (episode-end): +25.31
+    Compliance: 84.36%
+    Avg Fixes/Episode: 22.9
+
+  Update 29: Episodes: 750 total
+    Env Reward/Episode: -178.05
+    Total Reward/Episode: -155.60
+    Alignment Bonus (episode-end): +22.45
+    Compliance: 74.83%
+    Avg Fixes/Episode: 19.6
+
+  Update 30: Episodes: 775 total
+    Env Reward/Episode: -182.68
+    Total Reward/Episode: -159.43
+    Alignment Bonus (episode-end): +23.25
+    Compliance: 77.48%
+    Avg Fixes/Episode: 18.6
+
+  Update 31: Episodes: 800 total
+    Env Reward/Episode: -180.44
+    Total Reward/Episode: -158.09
+    Alignment Bonus (episode-end): +22.35
+    Compliance: 74.50%
+    Avg Fixes/Episode: 17.4
+
+  Update 32: Episodes: 825 total
+    Env Reward/Episode: -180.52
+    Total Reward/Episode: -157.18
+    Alignment Bonus (episode-end): +23.34
+    Compliance: 77.79%
+    Avg Fixes/Episode: 17.4
+
+  Update 33: Episodes: 850 total
+    Env Reward/Episode: -179.40
+    Total Reward/Episode: -153.98
+    Alignment Bonus (episode-end): +25.42
+    Compliance: 84.72%
+    Avg Fixes/Episode: 18.6
+
+  Update 34: Episodes: 875 total
+    Env Reward/Episode: -177.32
+    Total Reward/Episode: -150.17
+    Alignment Bonus (episode-end): +27.15
+    Compliance: 90.50%
+    Avg Fixes/Episode: 20.0
+
+  Update 35: Episodes: 900 total
+    Env Reward/Episode: -175.56
+    Total Reward/Episode: -149.39
+    Alignment Bonus (episode-end): +26.17
+    Compliance: 87.24%
+    Avg Fixes/Episode: 22.2
+
+  Update 36: Episodes: 925 total
+    Env Reward/Episode: -174.08
+    Total Reward/Episode: -146.73
+    Alignment Bonus (episode-end): +27.35
+    Compliance: 91.15%
+    Avg Fixes/Episode: 22.9
+
+  Update 37: Episodes: 950 total
+    Env Reward/Episode: -178.56
+    Total Reward/Episode: -151.91
+    Alignment Bonus (episode-end): +26.65
+    Compliance: 88.84%
+    Avg Fixes/Episode: 19.7
+
+  Update 38: Episodes: 975 total
+    Env Reward/Episode: -183.44
+    Total Reward/Episode: -156.26
+    Alignment Bonus (episode-end): +27.18
+    Compliance: 90.59%
+    Avg Fixes/Episode: 19.6
+
+  Update 39: Episodes: 1000 total
+    Env Reward/Episode: -185.48
+    Total Reward/Episode: -157.94
+    Alignment Bonus (episode-end): +27.54
+    Compliance: 91.81%
+    Avg Fixes/Episode: 21.1
+
+  Update 40: Episodes: 1025 total
+    Env Reward/Episode: -177.80
+    Total Reward/Episode: -149.78
+    Alignment Bonus (episode-end): +28.02
+    Compliance: 93.39%
+    Avg Fixes/Episode: 21.4
+
+  Update 41: Episodes: 1050 total
+    Env Reward/Episode: -179.20
+    Total Reward/Episode: -151.51
+    Alignment Bonus (episode-end): +27.69
+    Compliance: 92.31%
+    Avg Fixes/Episode: 18.2
+
+  Update 42: Episodes: 1075 total
+    Env Reward/Episode: -177.72
+    Total Reward/Episode: -150.70
+    Alignment Bonus (episode-end): +27.02
+    Compliance: 90.07%
+    Avg Fixes/Episode: 17.0
+
+  Update 43: Episodes: 1100 total
+    Env Reward/Episode: -176.36
+    Total Reward/Episode: -149.12
+    Alignment Bonus (episode-end): +27.24
+    Compliance: 90.82%
+    Avg Fixes/Episode: 18.8
+
+  Update 44: Episodes: 1125 total
+    Env Reward/Episode: -174.88
+    Total Reward/Episode: -147.15
+    Alignment Bonus (episode-end): +27.73
+    Compliance: 92.44%
+    Avg Fixes/Episode: 19.1
+
+  Update 45: Episodes: 1150 total
+    Env Reward/Episode: -182.40
+    Total Reward/Episode: -155.50
+    Alignment Bonus (episode-end): +26.90
+    Compliance: 89.67%
+    Avg Fixes/Episode: 17.4
+
+  Update 46: Episodes: 1175 total
+    Env Reward/Episode: -188.48
+    Total Reward/Episode: -160.89
+    Alignment Bonus (episode-end): +27.59
+    Compliance: 91.97%
+    Avg Fixes/Episode: 18.8
+
+  Update 47: Episodes: 1200 total
+    Env Reward/Episode: -189.04
+    Total Reward/Episode: -161.00
+    Alignment Bonus (episode-end): +28.04
+    Compliance: 93.46%
+    Avg Fixes/Episode: 20.9
+
+  Update 48: Episodes: 1225 total
+    Env Reward/Episode: -186.16
+    Total Reward/Episode: -158.81
+    Alignment Bonus (episode-end): +27.35
+    Compliance: 91.17%
+    Avg Fixes/Episode: 17.7
+
+  Update 49: Episodes: 1250 total
+    Env Reward/Episode: -185.00
+    Total Reward/Episode: -158.40
+    Alignment Bonus (episode-end): +26.60
+    Compliance: 88.66%
+    Avg Fixes/Episode: 15.2
+
+  Update 50: Episodes: 1275 total
+    Env Reward/Episode: -185.88
+    Total Reward/Episode: -159.14
+    Alignment Bonus (episode-end): +26.74
+    Compliance: 89.12%
+    Avg Fixes/Episode: 14.4
+
+  Update 51: Episodes: 1300 total
+    Env Reward/Episode: -186.04
+    Total Reward/Episode: -161.66
+    Alignment Bonus (episode-end): +24.38
+    Compliance: 81.26%
+    Avg Fixes/Episode: 14.1
+
+  Update 52: Episodes: 1325 total
+    Env Reward/Episode: -188.40
+    Total Reward/Episode: -163.30
+    Alignment Bonus (episode-end): +25.10
+    Compliance: 83.68%
+    Avg Fixes/Episode: 13.9
+
+  Update 53: Episodes: 1350 total
+    Env Reward/Episode: -190.16
+    Total Reward/Episode: -164.63
+    Alignment Bonus (episode-end): +25.53
+    Compliance: 85.11%
+    Avg Fixes/Episode: 13.7
+
+  Update 54: Episodes: 1375 total
+    Env Reward/Episode: -186.92
+    Total Reward/Episode: -160.69
+    Alignment Bonus (episode-end): +26.23
+    Compliance: 87.45%
+    Avg Fixes/Episode: 13.0
+
+  Update 55: Episodes: 1400 total
+    Env Reward/Episode: -185.84
+    Total Reward/Episode: -161.25
+    Alignment Bonus (episode-end): +24.59
+    Compliance: 81.96%
+    Avg Fixes/Episode: 12.0
+
+  Update 56: Episodes: 1425 total
+    Env Reward/Episode: -179.76
+    Total Reward/Episode: -154.08
+    Alignment Bonus (episode-end): +25.68
+    Compliance: 85.61%
+    Avg Fixes/Episode: 11.5
+
+  Update 57: Episodes: 1450 total
+    Env Reward/Episode: -172.04
+    Total Reward/Episode: -145.65
+    Alignment Bonus (episode-end): +26.39
+    Compliance: 87.97%
+    Avg Fixes/Episode: 14.5
+
+  Update 58: Episodes: 1475 total
+    Env Reward/Episode: -168.88
+    Total Reward/Episode: -144.32
+    Alignment Bonus (episode-end): +24.56
+    Compliance: 81.87%
+    Avg Fixes/Episode: 13.8
+
+  Update 59: Episodes: 1500 total
+    Env Reward/Episode: -171.64
+    Total Reward/Episode: -146.60
+    Alignment Bonus (episode-end): +25.04
+    Compliance: 83.48%
+    Avg Fixes/Episode: 13.7
+
+  Update 60: Episodes: 1525 total
+    Env Reward/Episode: -178.08
+    Total Reward/Episode: -153.70
+    Alignment Bonus (episode-end): +24.38
+    Compliance: 81.26%
+    Avg Fixes/Episode: 13.6
+
+  Update 61: Episodes: 1550 total
+    Env Reward/Episode: -175.96
+    Total Reward/Episode: -151.54
+    Alignment Bonus (episode-end): +24.42
+    Compliance: 81.40%
+    Avg Fixes/Episode: 14.2
+
+  Update 62: Episodes: 1575 total
+    Env Reward/Episode: -175.04
+    Total Reward/Episode: -151.39
+    Alignment Bonus (episode-end): +23.65
+    Compliance: 78.85%
+    Avg Fixes/Episode: 16.5
+
+  Update 63: Episodes: 1600 total
+    Env Reward/Episode: -179.04
+    Total Reward/Episode: -154.19
+    Alignment Bonus (episode-end): +24.85
+    Compliance: 82.83%
+    Avg Fixes/Episode: 14.9
+
+  Update 64: Episodes: 1625 total
+    Env Reward/Episode: -173.96
+    Total Reward/Episode: -149.16
+    Alignment Bonus (episode-end): +24.80
+    Compliance: 82.66%
+    Avg Fixes/Episode: 14.7
+
+  Update 65: Episodes: 1650 total
+    Env Reward/Episode: -171.64
+    Total Reward/Episode: -146.14
+    Alignment Bonus (episode-end): +25.50
+    Compliance: 84.99%
+    Avg Fixes/Episode: 15.8
+
+  Update 66: Episodes: 1675 total
+    Env Reward/Episode: -166.84
+    Total Reward/Episode: -140.12
+    Alignment Bonus (episode-end): +26.72
+    Compliance: 89.06%
+    Avg Fixes/Episode: 16.0
+
+  Update 67: Episodes: 1700 total
+    Env Reward/Episode: -159.88
+    Total Reward/Episode: -133.08
+    Alignment Bonus (episode-end): +26.80
+    Compliance: 89.34%
+    Avg Fixes/Episode: 16.5
+
+  Update 68: Episodes: 1725 total
+    Env Reward/Episode: -151.28
+    Total Reward/Episode: -123.85
+    Alignment Bonus (episode-end): +27.43
+    Compliance: 91.44%
+    Avg Fixes/Episode: 17.6
+
+  Update 69: Episodes: 1750 total
+    Env Reward/Episode: -151.64
+    Total Reward/Episode: -125.36
+    Alignment Bonus (episode-end): +26.28
+    Compliance: 87.60%
+    Avg Fixes/Episode: 16.2
+
+  Update 70: Episodes: 1775 total
+    Env Reward/Episode: -153.48
+    Total Reward/Episode: -126.69
+    Alignment Bonus (episode-end): +26.79
+    Compliance: 89.29%
+    Avg Fixes/Episode: 16.2
+
+  Update 71: Episodes: 1800 total
+    Env Reward/Episode: -166.36
+    Total Reward/Episode: -140.02
+    Alignment Bonus (episode-end): +26.34
+    Compliance: 87.79%
+    Avg Fixes/Episode: 14.9
+
+  Update 72: Episodes: 1825 total
+    Env Reward/Episode: -168.08
+    Total Reward/Episode: -143.48
+    Alignment Bonus (episode-end): +24.60
+    Compliance: 81.99%
+    Avg Fixes/Episode: 15.7
+
+  Update 73: Episodes: 1850 total
+    Env Reward/Episode: -161.04
+    Total Reward/Episode: -136.76
+    Alignment Bonus (episode-end): +24.28
+    Compliance: 80.95%
+    Avg Fixes/Episode: 14.2
+
+  Update 74: Episodes: 1875 total
+    Env Reward/Episode: -161.67
+    Total Reward/Episode: -137.70
+    Alignment Bonus (episode-end): +23.97
+    Compliance: 79.91%
+    Avg Fixes/Episode: 13.6
+
+  Update 75: Episodes: 1900 total
+    Env Reward/Episode: -167.12
+    Total Reward/Episode: -143.38
+    Alignment Bonus (episode-end): +23.74
+    Compliance: 79.15%
+    Avg Fixes/Episode: 15.6
+
+  Update 76: Episodes: 1925 total
+    Env Reward/Episode: -157.84
+    Total Reward/Episode: -134.38
+    Alignment Bonus (episode-end): +23.47
+    Compliance: 78.22%
+    Avg Fixes/Episode: 14.4
+
+  Update 77: Episodes: 1950 total
+    Env Reward/Episode: -160.50
+    Total Reward/Episode: -138.82
+    Alignment Bonus (episode-end): +21.68
+    Compliance: 72.27%
+    Avg Fixes/Episode: 14.7
+
+  Update 78: Episodes: 1975 total
+    Env Reward/Episode: -157.24
+    Total Reward/Episode: -135.66
+    Alignment Bonus (episode-end): +21.58
+    Compliance: 71.93%
+    Avg Fixes/Episode: 15.1
+
+  Update 79: Episodes: 2000 total
+    Env Reward/Episode: -171.20
+    Total Reward/Episode: -148.54
+    Alignment Bonus (episode-end): +22.66
+    Compliance: 75.55%
+    Avg Fixes/Episode: 15.4
+
+  Update 80: Episodes: 2025 total
+    Env Reward/Episode: -165.36
+    Total Reward/Episode: -146.44
+    Alignment Bonus (episode-end): +18.92
+    Compliance: 63.08%
+    Avg Fixes/Episode: 15.2
+
+  Update 81: Episodes: 2050 total
+    Env Reward/Episode: -166.24
+    Total Reward/Episode: -146.04
+    Alignment Bonus (episode-end): +20.20
+    Compliance: 67.34%
+    Avg Fixes/Episode: 15.2
+
+  Update 82: Episodes: 2075 total
+    Env Reward/Episode: -166.28
+    Total Reward/Episode: -145.53
+    Alignment Bonus (episode-end): +20.74
+    Compliance: 69.14%
+    Avg Fixes/Episode: 14.6
+
+  Update 83: Episodes: 2100 total
+    Env Reward/Episode: -152.48
+    Total Reward/Episode: -130.91
+    Alignment Bonus (episode-end): +21.57
+    Compliance: 71.89%
+    Avg Fixes/Episode: 14.2
+
+  Update 84: Episodes: 2125 total
+    Env Reward/Episode: -167.00
+    Total Reward/Episode: -145.24
+    Alignment Bonus (episode-end): +21.76
+    Compliance: 72.55%
+    Avg Fixes/Episode: 13.1
+
+  Update 85: Episodes: 2150 total
+    Env Reward/Episode: -165.36
+    Total Reward/Episode: -143.13
+    Alignment Bonus (episode-end): +22.23
+    Compliance: 74.10%
+    Avg Fixes/Episode: 14.8
+
+  Update 86: Episodes: 2175 total
+    Env Reward/Episode: -164.44
+    Total Reward/Episode: -138.62
+    Alignment Bonus (episode-end): +25.82
+    Compliance: 86.06%
+    Avg Fixes/Episode: 16.4
+
+  Update 87: Episodes: 2200 total
+    Env Reward/Episode: -159.88
+    Total Reward/Episode: -134.33
+    Alignment Bonus (episode-end): +25.55
+    Compliance: 85.17%
+    Avg Fixes/Episode: 16.0
+
+  Update 88: Episodes: 2225 total
+    Env Reward/Episode: -141.64
+    Total Reward/Episode: -115.22
+    Alignment Bonus (episode-end): +26.42
+    Compliance: 88.07%
+    Avg Fixes/Episode: 15.4
+
+  Update 89: Episodes: 2250 total
+    Env Reward/Episode: -138.20
+    Total Reward/Episode: -112.54
+    Alignment Bonus (episode-end): +25.66
+    Compliance: 85.54%
+    Avg Fixes/Episode: 14.2
+
+  Update 90: Episodes: 2275 total
+    Env Reward/Episode: -137.44
+    Total Reward/Episode: -112.63
+    Alignment Bonus (episode-end): +24.81
+    Compliance: 82.69%
+    Avg Fixes/Episode: 13.9
+
+  Update 91: Episodes: 2300 total
+    Env Reward/Episode: -140.02
+    Total Reward/Episode: -114.18
+    Alignment Bonus (episode-end): +25.84
+    Compliance: 86.14%
+    Avg Fixes/Episode: 15.7
+
+  Update 92: Episodes: 2325 total
+    Env Reward/Episode: -141.08
+    Total Reward/Episode: -115.05
+    Alignment Bonus (episode-end): +26.03
+    Compliance: 86.77%
+    Avg Fixes/Episode: 15.3
+
+  Update 93: Episodes: 2350 total
+    Env Reward/Episode: -142.97
+    Total Reward/Episode: -116.45
+    Alignment Bonus (episode-end): +26.52
+    Compliance: 88.39%
+    Avg Fixes/Episode: 17.9
+
+  Update 94: Episodes: 2375 total
+    Env Reward/Episode: -158.61
+    Total Reward/Episode: -134.37
+    Alignment Bonus (episode-end): +24.24
+    Compliance: 80.79%
+    Avg Fixes/Episode: 17.6
+
+  Update 95: Episodes: 2400 total
+    Env Reward/Episode: -163.12
+    Total Reward/Episode: -137.95
+    Alignment Bonus (episode-end): +25.17
+    Compliance: 83.91%
+    Avg Fixes/Episode: 16.8
+
+  Update 96: Episodes: 2425 total
+    Env Reward/Episode: -152.88
+    Total Reward/Episode: -128.48
+    Alignment Bonus (episode-end): +24.40
+    Compliance: 81.33%
+    Avg Fixes/Episode: 16.2
+
+  Update 97: Episodes: 2450 total
+    Env Reward/Episode: -149.56
+    Total Reward/Episode: -125.43
+    Alignment Bonus (episode-end): +24.13
+    Compliance: 80.43%
+    Avg Fixes/Episode: 17.6
+
+  Update 98: Episodes: 2475 total
+    Env Reward/Episode: -151.92
+    Total Reward/Episode: -128.06
+    Alignment Bonus (episode-end): +23.86
+    Compliance: 79.52%
+    Avg Fixes/Episode: 17.2
+
+  Update 99: Episodes: 2500 total
+    Env Reward/Episode: -149.00
+    Total Reward/Episode: -125.96
+    Alignment Bonus (episode-end): +23.04
+    Compliance: 76.81%
+    Avg Fixes/Episode: 18.2
+
+  ✗ Max episodes reached without achieving compliance threshold
+    Episodes trained: 100 per env
+  Training log saved to: exp_bline/workflow_17_training_log.csv
+
+  ✗ Training failed - compliance threshold not achieved
+  Final compliance: 80.40%
+  Assigning penalty reward: -1000.00
+  Policy still saved for next workflow (partial learning may help)
+
+✗ Compliance not achieved - sample NOT recorded in GP-UCB
+   (This workflow will not influence the search)
+
+============================================================
+ITERATION 18 SUMMARY
+============================================================
+  Workflow: enterprise → user → op_server → defender → op_host
+  Training Episodes: 100 per env
+  Final Compliance: 80.40%
+  Success: ✗ No
+  Penalty (for GP-UCB): -1000.00
+============================================================
+
+Best workflow so far: enterprise → defender → op_host → op_server → user
+Best reward: -1295.28
+  Results saved to exp_bline/parallel_training_history.json
+
+==================================================
+Iteration 19/20
+==================================================
+
+--------------------------------------------------
+GP-UCB Selection Details:
+  Selected: op_server → enterprise → user → defender → op_host
+  UCB Score: -1287.850
+  Mean Reward: -1297.85
+  Uncertainty (std): 5.000
+  Exploration Bonus: 10.000
+  Exploitation Value: -1297.85
+  Selection Type: exploration
+  Previous Visits: 0
+  Closest Known: defender → op_server → user → enterprise → op_host (dist=0.40, reward=-1297.38)
+
+  Top 3 Candidates:
+    1. op_server → enterprise → user → defender → op_host
+       UCB=-1287.850, Mean=-1297.85, Std=5.000
+    2. enterprise → op_host → user → op_server → defender
+       UCB=-1288.018, Mean=-1298.02, Std=5.000
+    3. user → defender → op_host → enterprise → op_server
+       UCB=-1288.265, Mean=-1298.27, Std=5.000
+--------------------------------------------------
+
+============================================================
+Training with workflow: op_server → enterprise → user → defender → op_host
+Goal: Train until compliance >= 95.0%
+Using 25 parallel environments
+============================================================
+  Training log: exp_bline/workflow_18_training_log.csv
