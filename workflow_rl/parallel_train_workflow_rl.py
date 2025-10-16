@@ -25,9 +25,9 @@ class ParallelWorkflowRLTrainer:
     """Main trainer for workflow search-based RL with parallel environments"""
     
     def __init__(self, 
-                 n_envs: int = 25,
+                 n_envs: int = 200,
                  n_workflows: int = 20,
-                 max_train_episodes_per_env: int = 100,  # Max episodes before giving up
+                 max_train_episodes_per_env: int = 50,  # Max episodes before giving up
                  max_steps: int = 100,
                  scenario_path: str = '/home/ubuntu/CAGE2/cage-challenge-2/CybORG/CybORG/Shared/Scenarios/Scenario2.yaml',
                  red_agent_type=RedMeanderAgent,
@@ -35,9 +35,9 @@ class ParallelWorkflowRLTrainer:
                  gp_beta: float = 2.0,
                  checkpoint_dir: str = 'checkpoints',
                  compliance_threshold: float = 0.95,  # Must achieve this before evaluation
-                 min_episodes: int = 25,  # Minimum episodes before checking compliance
+                 min_episodes: int = 5,  # Minimum episodes before checking compliance
                  n_eval_episodes: int = 20,  # Episodes for evaluation
-                 update_every_steps: int = 100):  # Update every 100 steps (full episode) = 2500 transitions with 25 envs
+                 update_every_steps: int = 100):  # Update every 100 steps (full episode) = 20000 transitions with 200 envs
         """
         Initialize parallel trainer
         
@@ -539,7 +539,7 @@ class ParallelWorkflowRLTrainer:
             print(f"EVALUATION PHASE")
             print(f"{'='*60}")
             print(f"Evaluating agent on PURE ENVIRONMENT REWARD (no alignment)")
-            print(f"Running {self.n_eval_episodes} episodes per environment...")
+            print(f"Running {self.n_eval_episodes} episodes per environment ({self.n_envs} envs)...")
             
             # Evaluate on pure environment reward (no alignment rewards)
             eval_reward, eval_compliance = self.evaluate_pure_performance_parallel(
@@ -594,17 +594,26 @@ class ParallelWorkflowRLTrainer:
         Returns:
             (average_env_reward, average_compliance_rate)
         """
-        # Create evaluation environments
-        n_eval_envs = min(self.n_envs, 10)
+        # IMPORTANT: Use the same number of environments as training to avoid dimension mismatch
+        # The agent was initialized with self.n_envs and its internal arrays expect that size
+        n_eval_envs = self.n_envs  # Must match training environment count
         envs = ParallelEnvWrapper(
-            n_envs=n_eval_envs,  # Use fewer envs for evaluation
+            n_envs=n_eval_envs,
             scenario_path=self.scenario_path,
             red_agent_type=self.red_agent_type
         )
         
-        # Reset agent's compliance tracking for evaluation environments
+        # Save the agent's training state
+        saved_compliant = agent.env_compliant_actions.copy()
+        saved_total_fix = agent.env_total_fix_actions.copy()
+        saved_fixed_types = [s.copy() for s in agent.env_fixed_types]
+        saved_last_scores = agent.env_last_alignment_scores.copy()
+        
+        # Reset agent's compliance tracking for evaluation
         agent.env_compliant_actions = np.zeros(n_eval_envs)
         agent.env_total_fix_actions = np.zeros(n_eval_envs)
+        agent.env_fixed_types = [set() for _ in range(n_eval_envs)]
+        agent.env_last_alignment_scores = np.zeros(n_eval_envs)
         agent.prev_true_states = [None] * n_eval_envs
         
         eval_rewards = [[] for _ in range(n_eval_envs)]
@@ -616,6 +625,9 @@ class ParallelWorkflowRLTrainer:
         
         observations = envs.reset()
         
+        # Get initial true states for compliance tracking
+        true_states = [envs.envs[i].env.get_observation() for i in range(n_eval_envs)]
+        
         while np.min(episode_counts) < n_eval_episodes:
             # Get actions (deterministic for evaluation)
             actions, _, _ = agent.get_actions(observations, deterministic=True)
@@ -623,7 +635,19 @@ class ParallelWorkflowRLTrainer:
             # Step environments
             observations, env_rewards, dones, infos = envs.step(actions)
             
-            # Track rewards (pure environment rewards only)
+            # Get new true states for compliance tracking
+            new_true_states = [envs.envs[i].env.get_observation() for i in range(n_eval_envs)]
+            
+            # CRITICAL: Compute alignment rewards to update compliance tracking
+            # We don't add these to the rewards, but we need to update the agent's internal state
+            _ = agent.compute_alignment_rewards(
+                actions, new_true_states, true_states, dones
+            )
+            
+            # Update true states for next step
+            true_states = new_true_states
+            
+            # Track rewards (pure environment rewards only - no alignment bonus)
             current_rewards += env_rewards
             current_steps += 1
             
@@ -640,8 +664,21 @@ class ParallelWorkflowRLTrainer:
                         episode_counts[env_idx] += 1
                         current_rewards[env_idx] = 0
                         current_steps[env_idx] = 0
+                        
+                        # Reset compliance tracking for this env for next episode
+                        agent.env_compliant_actions[env_idx] = 0
+                        agent.env_total_fix_actions[env_idx] = 0
+                        agent.env_fixed_types[env_idx] = set()
+                        agent.env_last_alignment_scores[env_idx] = 0
+                        agent.prev_true_states[env_idx] = None
         
         envs.close()
+        
+        # Restore agent's training state
+        agent.env_compliant_actions = saved_compliant
+        agent.env_total_fix_actions = saved_total_fix
+        agent.env_fixed_types = saved_fixed_types
+        agent.env_last_alignment_scores = saved_last_scores
         
         # Calculate averages
         all_rewards = []
@@ -915,11 +952,11 @@ def parse_args():
     
     # Environment Configuration
     env_group = parser.add_argument_group('Environment Configuration')
-    env_group.add_argument('--n-envs', type=int, default=25,
+    env_group.add_argument('--n-envs', type=int, default=200,
                           help='Number of parallel environments')
     env_group.add_argument('--n-workflows', type=int, default=20,
                           help='Number of workflows to explore')
-    env_group.add_argument('--max-episodes', type=int, default=400,
+    env_group.add_argument('--max-episodes', type=int, default=50,
                           help='Max episodes per environment per workflow')
     env_group.add_argument('--max-steps', type=int, default=100,
                           help='Max steps per episode')
@@ -933,7 +970,7 @@ def parse_args():
                             help='Compliance reward strength (higher = stricter)')
     learn_group.add_argument('--compliance-threshold', type=float, default=0.95,
                             help='Required compliance before evaluation (0.0-1.0)')
-    learn_group.add_argument('--min-episodes', type=int, default=10,
+    learn_group.add_argument('--min-episodes', type=int, default=5,
                             help='Min episodes before checking compliance')
     learn_group.add_argument('--update-steps', type=int, default=100,
                             help='PPO update frequency (steps)')
