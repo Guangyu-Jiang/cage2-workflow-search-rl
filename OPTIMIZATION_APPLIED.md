@@ -30,30 +30,27 @@ envs = ParallelEnvSharedMemory(n_envs=self.n_envs, ...)
 
 **After:**
 - Train with alignment rewards
-- Use average of last 3 episodes from each of 200 environments
+- Use average of last episode from each of 200 environments
 - Direct use of training rewards for GP-UCB
 
 **Why This is Better:**
-- **600 episodes** of data (3 episodes × 200 envs) vs 20 episodes in evaluation
+- **200 episodes** of data (last episode × 200 envs) vs 20 episodes in evaluation
 - **No extra time** spent on evaluation
-- **More robust estimate** from larger sample
+- **More robust estimate** from larger sample with less variance
 - **Simpler code** - removed 100+ lines
 
 ### 3. 📊 **How Training Rewards are Used**
 
 ```python
-# Calculate average environment reward from last few episodes
-recent_rewards = []
+# Calculate average environment reward from last episode only
+last_episode_rewards = []
 for env_idx in range(self.n_envs):
-    if len(episode_rewards[env_idx]) >= 3:
-        # Take last 3 episodes from each environment
-        recent_rewards.extend(episode_rewards[env_idx][-3:])
-    elif len(episode_rewards[env_idx]) > 0:
-        # Take what we have if less than 3
-        recent_rewards.extend(episode_rewards[env_idx])
+    if len(episode_rewards[env_idx]) > 0:
+        # Take only the last episode from each environment
+        last_episode_rewards.append(episode_rewards[env_idx][-1])
 
-# Average reward across all recent episodes from all environments
-eval_reward = np.mean(recent_rewards)  # Used for GP-UCB
+# Average reward across last episodes from all environments
+eval_reward = np.mean(last_episode_rewards)  # Used for GP-UCB
 ```
 
 ### 4. 🚀 **Performance Improvements**
@@ -63,14 +60,14 @@ eval_reward = np.mean(recent_rewards)  # Used for GP-UCB
 | **Environment Step Time** | ~550ms (with pipes) | ~33ms (shared memory) |
 | **Transitions/Second** | 180 | 3,052 |
 | **Evaluation Time** | 20 eps × 100 steps × 200 envs | 0 (use training data) |
-| **Data for GP-UCB** | 20 episodes | 600 episodes |
+| **Data for GP-UCB** | 20 episodes | 200 episodes |
 | **Code Complexity** | Complex evaluation function | Simple averaging |
 
 ### 5. 🎯 **Key Benefits**
 
 1. **Massive Speedup**: 17x faster environment sampling
 2. **Time Savings**: No separate evaluation phase
-3. **Better Estimates**: 600 episodes vs 20 for reward estimation
+3. **Better Estimates**: 200 episodes vs 20 for reward estimation
 4. **Simpler Code**: Removed 100+ lines of evaluation code
 5. **Same API**: Drop-in replacement, no other changes needed
 
@@ -79,16 +76,26 @@ eval_reward = np.mean(recent_rewards)  # Used for GP-UCB
 Simply run the training as before:
 
 ```bash
-# Default settings (now with 200 envs and shared memory)
+# Default settings (automatically uses these values):
+# --n-envs 200 (default)
+# --n-workflows 20 (default)  
+# --max-episodes 50 (default)
 python workflow_rl/parallel_train_workflow_rl.py
 
 # Or with custom settings
 python workflow_rl/parallel_train_workflow_rl.py \
-    --n-envs 200 \
-    --n-workflows 20 \
-    --max-episodes 50 \
+    --n-envs 100 \
+    --n-workflows 30 \
+    --max-episodes 100 \
     --red-agent bline
 ```
+
+**Default Configuration:**
+- `n_envs`: 200 parallel environments (YES, this is default)
+- `n_workflows`: 20 workflows to explore (YES, this is default)
+- `max_train_episodes_per_env`: 50 episodes maximum per workflow
+- `min_episodes`: 5 episodes before checking compliance
+- `compliance_threshold`: 0.95 (95% compliance required)
 
 ## Expected Training Time Reduction
 
@@ -111,8 +118,8 @@ With these optimizations:
 
 ### Training Reward Calculation
 
-- Collects last 3 episodes from each of 200 environments
-- Total of ~600 episodes for averaging
+- Collects last episode from each of 200 environments
+- Total of 200 episodes for averaging
 - Much more robust than 20 evaluation episodes
 - Represents actual training performance
 

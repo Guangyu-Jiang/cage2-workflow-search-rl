@@ -524,24 +524,21 @@ class ParallelWorkflowRLTrainer:
         # Use training environment rewards directly (no separate evaluation needed!)
         # We already have rewards from 200 parallel environments
         if compliance_achieved:
-            # Calculate average environment reward from last few episodes
-            recent_rewards = []
+            # Calculate average environment reward from last episode only
+            last_episode_rewards = []
             for env_idx in range(self.n_envs):
-                if len(episode_rewards[env_idx]) >= 3:
-                    # Take last 3 episodes from each environment
-                    recent_rewards.extend(episode_rewards[env_idx][-3:])
-                elif len(episode_rewards[env_idx]) > 0:
-                    # Take what we have if less than 3
-                    recent_rewards.extend(episode_rewards[env_idx])
+                if len(episode_rewards[env_idx]) > 0:
+                    # Take only the last episode from each environment
+                    last_episode_rewards.append(episode_rewards[env_idx][-1])
             
-            # Average reward across all recent episodes from all environments
-            eval_reward = np.mean(recent_rewards) if recent_rewards else -1000.0
+            # Average reward across last episodes from all environments
+            eval_reward = np.mean(last_episode_rewards) if last_episode_rewards else -1000.0
             eval_compliance = final_training_compliance
             
             print(f"\n{'='*60}")
             print(f"TRAINING COMPLETE - Using Training Rewards")
             print(f"{'='*60}")
-            print(f"  Average Environment Reward (last 3 eps × {self.n_envs} envs): {eval_reward:.2f}")
+            print(f"  Average Environment Reward (last episode × {self.n_envs} envs): {eval_reward:.2f}")
             print(f"  Final Compliance: {eval_compliance:.2%}")
             print(f"  → This reward will be used for GP-UCB")
             print(f"{'='*60}")
