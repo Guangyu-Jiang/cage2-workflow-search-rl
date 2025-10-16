@@ -27,8 +27,8 @@ class ParallelWorkflowRLTrainer:
     
     def __init__(self, 
                  n_envs: int = 200,
-                 n_workflows: int = 20,
-                 max_train_episodes_per_env: int = 50,  # Max episodes before giving up
+                 total_episode_budget: int = 500,  # Total episodes across all workflows
+                 max_train_episodes_per_env: int = 50,  # Max episodes per workflow before giving up
                  max_steps: int = 100,
                  scenario_path: str = '/home/ubuntu/CAGE2/cage-challenge-2/CybORG/CybORG/Shared/Scenarios/Scenario2.yaml',
                  red_agent_type=RedMeanderAgent,
@@ -36,35 +36,37 @@ class ParallelWorkflowRLTrainer:
                  gp_beta: float = 2.0,
                  checkpoint_dir: str = 'checkpoints',
                  compliance_threshold: float = 0.95,  # Must achieve this before evaluation
-                 min_episodes: int = 5,  # Minimum episodes before checking compliance
-                 n_eval_episodes: int = 20,  # Episodes for evaluation
+                 n_eval_episodes: int = 20,  # Episodes for evaluation (not used anymore)
                  update_every_steps: int = 100):  # Update every 100 steps (full episode) = 20000 transitions with 200 envs
         """
         Initialize parallel trainer
         
         Training Strategy:
         1. Train PPO with alignment rewards until compliance >= 95%
-        2. Evaluate on pure environment reward (without alignment)
-        3. Use evaluation reward as GP-UCB observation
+        2. Use last episode rewards for GP-UCB (no separate evaluation)
+        3. Only compliant workflows contribute to GP-UCB
+        4. Continue exploring workflows until episode budget is exhausted
         
         Args:
             n_envs: Number of parallel environments
-            max_train_episodes_per_env: Max episodes to train before giving up
-            compliance_threshold: Required compliance rate before evaluation
-            n_eval_episodes: Episodes for final evaluation
+            total_episode_budget: Total episodes allowed across all workflows
+            max_train_episodes_per_env: Max episodes per workflow before giving up
+            compliance_threshold: Required compliance rate
         """
         
         self.n_envs = n_envs
-        self.n_workflows = n_workflows
+        self.total_episode_budget = total_episode_budget
         self.max_train_episodes_per_env = max_train_episodes_per_env
         self.max_steps = max_steps
         self.scenario_path = scenario_path
         self.red_agent_type = red_agent_type
         self.alignment_lambda = alignment_lambda
         self.compliance_threshold = compliance_threshold
-        self.min_episodes = min_episodes
         self.n_eval_episodes = n_eval_episodes
         self.update_every_steps = update_every_steps
+        
+        # Track total episodes used across all workflows
+        self.total_episodes_used = 0
         
         # Create experiment-specific directory with timestamp and PID
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -151,12 +153,10 @@ class ParallelWorkflowRLTrainer:
                 'scenario': str(self.scenario_path)
             },
             'training': {
-                'n_workflows': self.n_workflows,
+                'total_episode_budget': self.total_episode_budget,
                 'max_train_episodes_per_env': self.max_train_episodes_per_env,
                 'compliance_threshold': self.compliance_threshold,
-                'min_episodes': self.min_episodes,
-                'update_every_steps': self.update_every_steps,
-                'n_eval_episodes': self.n_eval_episodes
+                'update_every_steps': self.update_every_steps
             },
             'rewards': {
                 'alignment_lambda': self.alignment_lambda
@@ -470,37 +470,36 @@ class ParallelWorkflowRLTrainer:
             
             total_steps += 1
             
-            # Compliance check - stop when threshold is achieved
-            min_episodes = np.min(episode_counts)
-            if min_episodes >= self.min_episodes:
-                # Calculate latest compliance for all environments
-                latest_compliances = []
-                # Use cumulative fixes for compliance check
-                total_cumulative_fixes = np.sum(cumulative_fix_actions)
-                current_episode_fixes = np.sum(agent.env_total_fix_actions)
-                total_fixes = total_cumulative_fixes + current_episode_fixes
+            # Compliance check - can stop immediately when threshold is achieved (no min episodes)
+            # Calculate latest compliance for all environments
+            latest_compliances = []
+            # Use cumulative fixes for compliance check
+            total_cumulative_fixes = np.sum(cumulative_fix_actions)
+            current_episode_fixes = np.sum(agent.env_total_fix_actions)
+            total_fixes = total_cumulative_fixes + current_episode_fixes
+            
+            for env_idx in range(self.n_envs):
+                if len(episode_compliances[env_idx]) >= 1:
+                    # Use only the most recent episode's compliance
+                    latest = episode_compliances[env_idx][-1]
+                    latest_compliances.append(latest)
+            
+            if latest_compliances:
+                avg_latest_compliance = np.mean(latest_compliances)
+                min_episodes = np.min(episode_counts)
                 
-                for env_idx in range(self.n_envs):
-                    if len(episode_compliances[env_idx]) >= 1:
-                        # Use only the most recent episode's compliance
-                        latest = episode_compliances[env_idx][-1]
-                        latest_compliances.append(latest)
-                
-                if latest_compliances:
-                    avg_latest_compliance = np.mean(latest_compliances)
-                    
-                    # Stop when latest compliance threshold is achieved with meaningful fixes
-                    if avg_latest_compliance >= self.compliance_threshold and total_fixes >= 10:
-                        print(f"\n  ✓ Compliance threshold achieved!")
-                        print(f"    Episodes trained: {min_episodes} per env")
-                        print(f"    Latest compliance: {avg_latest_compliance:.2%}")
-                        print(f"    Total fixes detected: {int(total_fixes)}")
-                        compliance_achieved = True
-                        break
-                    elif avg_latest_compliance >= self.compliance_threshold and total_fixes < 10:
-                        # High compliance but no fixes - keep training
-                        print(f"  High compliance ({avg_latest_compliance:.2%}) but only "
-                              f"{int(total_fixes)} fixes detected - continuing training")
+                # Stop when latest compliance threshold is achieved with meaningful fixes
+                if avg_latest_compliance >= self.compliance_threshold and total_fixes >= 10:
+                    print(f"\n  ✓ Compliance threshold achieved!")
+                    print(f"    Episodes trained: {min_episodes} per env")
+                    print(f"    Latest compliance: {avg_latest_compliance:.2%}")
+                    print(f"    Total fixes detected: {int(total_fixes)}")
+                    compliance_achieved = True
+                    break
+                elif avg_latest_compliance >= self.compliance_threshold and total_fixes < 10:
+                    # High compliance but no fixes - keep training
+                    print(f"  High compliance ({avg_latest_compliance:.2%}) but only "
+                          f"{int(total_fixes)} fixes detected - continuing training")
         
         # Check if max episodes reached without achieving compliance
         if not compliance_achieved:
@@ -584,7 +583,9 @@ class ParallelWorkflowRLTrainer:
         ])
         self.consolidated_log_file.flush()
         
-        return eval_reward, final_training_compliance, int(np.mean(episode_counts)), compliance_achieved
+        # Return actual episodes used (per env), not average
+        episodes_used = int(np.min(episode_counts))  # Min ensures we're counting actual completed episodes
+        return eval_reward, final_training_compliance, episodes_used, compliance_achieved
     
     # REMOVED: No longer need separate evaluation - we use training rewards directly
     # We already have rewards from 200 parallel environments during training
@@ -599,7 +600,7 @@ class ParallelWorkflowRLTrainer:
         2. Train PPO with alignment rewards until compliance >= 95%
         3. Use average training environment reward as GP-UCB observation
            (No separate evaluation - we have 200 parallel environments!)
-        4. Repeat for N workflows
+        4. Continue until episode budget is exhausted
         """
         
         print(f"\n{'='*60}")
@@ -611,21 +612,23 @@ class ParallelWorkflowRLTrainer:
         print(f"Configuration:")
         print(f"  Red Agent: {self.red_agent_type.__name__}")
         print(f"  Parallel Environments: {self.n_envs}")
-        print(f"  Workflows to Explore: {self.n_workflows}")
-        print(f"  Max Episodes per Env: {self.max_train_episodes_per_env}")
+        print(f"  Episode Budget: {self.total_episode_budget}")
+        print(f"  Max Episodes per Workflow: {self.max_train_episodes_per_env}")
         print(f"  Compliance Threshold: {self.compliance_threshold:.1%}")
         print(f"  Alignment Lambda: {self.alignment_lambda}")
         print(f"  Shared Memory: Enabled (17x speedup!)")
         print(f"\nTraining Strategy:")
         print(f"  1. Train with alignment rewards until compliance >= {self.compliance_threshold:.1%}")
         print(f"  2. Use training environment rewards for GP-UCB")
-        print(f"  3. No separate evaluation needed (200 envs provide good average)")
+        print(f"  3. Continue until {self.total_episode_budget} episodes are used")
         print(f"{'='*60}")
         
-        # Main search loop
-        for iteration in range(self.n_workflows):
+        # Main search loop - continue until budget exhausted
+        iteration = 0
+        while self.total_episodes_used < self.total_episode_budget:
             print(f"\n{'='*50}")
-            print(f"Iteration {iteration + 1}/{self.n_workflows}")
+            print(f"Iteration {iteration + 1}")
+            print(f"Episode Budget: {self.total_episodes_used}/{self.total_episode_budget} used")
             print(f"{'='*50}")
             
             # 1. Select next workflow using GP-UCB
@@ -683,13 +686,34 @@ class ParallelWorkflowRLTrainer:
             # Log GP-UCB sampling decision
             self._log_gp_sampling(iteration, workflow_order, ucb_score, info)
             
+            # Check if we have budget remaining (allow at least 1 episode)
+            if self.total_episodes_used >= self.total_episode_budget:
+                print(f"\n✗ Episode budget exhausted ({self.total_episodes_used}/{self.total_episode_budget})")
+                print(f"   Stopping workflow search...")
+                break
+            
+            # Calculate remaining budget for this workflow
+            remaining_budget = min(
+                self.max_train_episodes_per_env,
+                self.total_episode_budget - self.total_episodes_used
+            )
+            
+            if remaining_budget <= 0:
+                print(f"\n✗ No remaining budget for new workflow")
+                break
+            
             # Convert to workflow vector (one-hot encoding)
             workflow_vector = self.workflow_manager.order_to_onehot(workflow_order)
             
             # 2. Train PPO with this workflow until compliance threshold is met
-            eval_reward, train_compliance, avg_episodes, success = self.train_workflow_parallel(
+            eval_reward, train_compliance, episodes_used, success = self.train_workflow_parallel(
                 workflow_order, workflow_vector, iteration
             )
+            
+            # Update total episodes used
+            self.total_episodes_used += episodes_used
+            print(f"\n📊 Episodes used this workflow: {episodes_used}")
+            print(f"   Total episodes used: {self.total_episodes_used}/{self.total_episode_budget}")
             
             # 3. Update GP-UCB ONLY if compliance threshold was achieved
             if success:
@@ -708,7 +732,8 @@ class ParallelWorkflowRLTrainer:
                 'workflow': workflow_order,
                 'eval_reward': eval_reward,  # Pure environment reward from evaluation
                 'train_compliance': train_compliance,
-                'avg_episodes_trained': avg_episodes,
+                'episodes_trained': episodes_used,
+                'total_episodes_used': self.total_episodes_used,
                 'success': success,
                 'n_envs': self.n_envs
             }
@@ -719,7 +744,7 @@ class ParallelWorkflowRLTrainer:
             print(f"ITERATION {iteration + 1} SUMMARY")
             print(f"{'='*60}")
             print(f"  Workflow: {' → '.join(workflow_order)}")
-            print(f"  Training Episodes: {avg_episodes} per env")
+            print(f"  Training Episodes: {episodes_used} per env")
             print(f"  Final Compliance: {train_compliance:.2%}")
             print(f"  Success: {'✓ Yes' if success else '✗ No'}")
             if success:
@@ -738,9 +763,14 @@ class ParallelWorkflowRLTrainer:
             
             # 7. Save progress
             self.save_results()
+            
+            # Increment iteration counter
+            iteration += 1
         
         print(f"\n{'='*60}")
         print(f"Training Complete!")
+        print(f"Total Episodes Used: {self.total_episodes_used}/{self.total_episode_budget}")
+        print(f"Total Workflows Explored: {iteration}")
         print(f"{'='*60}")
         
         # Close consolidated log file
@@ -855,10 +885,10 @@ def parse_args():
     env_group = parser.add_argument_group('Environment Configuration')
     env_group.add_argument('--n-envs', type=int, default=200,
                           help='Number of parallel environments')
-    env_group.add_argument('--n-workflows', type=int, default=20,
-                          help='Number of workflows to explore')
+    env_group.add_argument('--total-episodes', type=int, default=500,
+                          help='Total episode budget across all workflows')
     env_group.add_argument('--max-episodes', type=int, default=50,
-                          help='Max episodes per environment per workflow')
+                          help='Max episodes per workflow before giving up')
     env_group.add_argument('--max-steps', type=int, default=100,
                           help='Max steps per episode')
     env_group.add_argument('--red-agent', type=str, default='meander',
@@ -871,8 +901,6 @@ def parse_args():
                             help='Compliance reward strength (higher = stricter)')
     learn_group.add_argument('--compliance-threshold', type=float, default=0.95,
                             help='Required compliance before evaluation (0.0-1.0)')
-    learn_group.add_argument('--min-episodes', type=int, default=5,
-                            help='Min episodes before checking compliance')
     learn_group.add_argument('--update-steps', type=int, default=100,
                             help='PPO update frequency (steps)')
     
@@ -911,14 +939,13 @@ def main():
     
     # Environment Configuration
     N_ENVS = args.n_envs
-    N_WORKFLOWS = args.n_workflows
+    TOTAL_EPISODE_BUDGET = args.total_episodes
     MAX_TRAIN_EPISODES_PER_ENV = args.max_episodes
     MAX_STEPS = args.max_steps
     
     # Learning Configuration
     ALIGNMENT_LAMBDA = args.alignment_lambda
     COMPLIANCE_THRESHOLD = args.compliance_threshold
-    MIN_EPISODES = args.min_episodes
     UPDATE_EVERY_STEPS = args.update_steps
     
     # Search Configuration
@@ -936,8 +963,8 @@ def main():
     print(f"{'='*60}")
     print(f"Red Agent: {args.red_agent} ({RED_AGENT_TYPE.__name__})")
     print(f"Parallel Envs: {N_ENVS}")
-    print(f"Workflows: {N_WORKFLOWS}")
-    print(f"Max Episodes/Env: {MAX_TRAIN_EPISODES_PER_ENV}")
+    print(f"Episode Budget: {TOTAL_EPISODE_BUDGET}")
+    print(f"Max Episodes/Workflow: {MAX_TRAIN_EPISODES_PER_ENV}")
     print(f"Alignment Lambda: {ALIGNMENT_LAMBDA}")
     print(f"Compliance Threshold: {COMPLIANCE_THRESHOLD:.1%}")
     print(f"Checkpoint Dir: {CHECKPOINT_DIR}")
@@ -951,14 +978,13 @@ def main():
     # Create trainer with parallel environments
     trainer = ParallelWorkflowRLTrainer(
         n_envs=N_ENVS,
-        n_workflows=N_WORKFLOWS,
+        total_episode_budget=TOTAL_EPISODE_BUDGET,
         max_train_episodes_per_env=MAX_TRAIN_EPISODES_PER_ENV,
         max_steps=MAX_STEPS,
         red_agent_type=RED_AGENT_TYPE,
         alignment_lambda=ALIGNMENT_LAMBDA,
         gp_beta=GP_BETA,
         compliance_threshold=COMPLIANCE_THRESHOLD,
-        min_episodes=MIN_EPISODES,
         n_eval_episodes=N_EVAL_EPISODES,
         update_every_steps=UPDATE_EVERY_STEPS,
         checkpoint_dir=CHECKPOINT_DIR
