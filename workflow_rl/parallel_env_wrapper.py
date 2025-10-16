@@ -57,7 +57,7 @@ class ParallelEnvWrapper:
             red_agent_type: Red agent class to use
         """
         self.n_envs = n_envs
-        self.scenario_path = scenario_path or 'Scenario2.yaml'
+        self.scenario_path = scenario_path or '/home/ubuntu/CAGE2/cage-challenge-2/CybORG/CybORG/Shared/Scenarios/Scenario2.yaml'
         self.red_agent_type = red_agent_type
         
         # Create environment function
