@@ -53596,3 +53596,201 @@ Traceback (most recent call last):
     eval_rewards = [[] for _ in range(n_eval_envs)]
                    ^^^^^^^^^
 AttributeError: 'ParallelEnvWrapper' object has no attribute 'envs'. Did you mean: 'n_envs'?
+Gym has been unmaintained since 2022 and does not support NumPy 2.0 amongst other critical functionality.
+Please upgrade to Gymnasium, the maintained drop-in replacement of Gym, or contact the authors of your software and request that they upgrade.
+Users of this version of Gym should be able to simply replace 'import gym' with 'import gymnasium as gym' in the vast majority of cases.
+See the migration guide at https://gymnasium.farama.org/introduction/migration_guide/ for additional information.
+Using device: cuda
+
+============================================================
+Configuration
+============================================================
+Red Agent: bline (B_lineAgent)
+Parallel Envs: 200
+Episode Budget: 500
+Max Episodes/Workflow: 50
+Alignment Lambda: 30.0
+Compliance Threshold: 95.0%
+Checkpoint Dir: compliance_checkpoints
+Random Seed: 42
+============================================================
+
+Starting experiment with PID: 2122101
+Experiment config: logs/exp_20251016_070241_2122101/experiment_config.json
+Experiment directory: logs/exp_20251016_070241_2122101
+Training log: logs/exp_20251016_070241_2122101/training_log.csv
+GP-UCB sampling log: logs/exp_20251016_070241_2122101/gp_sampling_log.csv
+
+============================================================
+Compliance-Gated Workflow Search
+============================================================
+Experiment: exp_20251016_070241_2122101
+Directory: logs/exp_20251016_070241_2122101
+============================================================
+Configuration:
+  Red Agent: B_lineAgent
+  Parallel Environments: 200
+  Episode Budget: 500
+  Max Episodes per Workflow: 50
+  Compliance Threshold: 95.0%
+  Alignment Lambda: 30.0
+  Shared Memory: Enabled (17x speedup!)
+
+Training Strategy:
+  1. Train with alignment rewards until compliance >= 95.0%
+  2. Use training environment rewards for GP-UCB
+  3. Continue until 500 episodes are used
+============================================================
+
+==================================================
+Iteration 1
+Episode Budget: 0/500 used
+==================================================
+
+--------------------------------------------------
+GP-UCB Selection Details:
+  Selected: user → op_host → op_server → enterprise → defender
+  UCB Score: 0.000
+  Method: random
+  Reason: initial_random
+--------------------------------------------------
+
+============================================================
+Training with workflow: user → op_host → op_server → enterprise → defender
+Goal: Train until compliance >= 95.0%
+Using 200 parallel environments
+============================================================
+Gym has been unmaintained since 2022 and does not support NumPy 2.0 amongst other critical functionality.
+Please upgrade to Gymnasium, the maintained drop-in replacement of Gym, or contact the authors of your software and request that they upgrade.
+Users of this version of Gym should be able to simply replace 'import gym' with 'import gymnasium as gym' in the vast majority of cases.
+See the migration guide at https://gymnasium.farama.org/introduction/migration_guide/ for additional information.
+Using device: cuda
+
+============================================================
+Configuration
+============================================================
+Red Agent: meander (RedMeanderAgent)
+Parallel Envs: 200
+Episode Budget: 500
+Max Episodes/Workflow: 50
+Alignment Lambda: 30.0
+Compliance Threshold: 95.0%
+Checkpoint Dir: compliance_checkpoints
+Random Seed: 42
+============================================================
+
+Starting experiment with PID: 2128982
+Experiment config: logs/exp_20251016_070319_2128982/experiment_config.json
+Experiment directory: logs/exp_20251016_070319_2128982
+Training log: logs/exp_20251016_070319_2128982/training_log.csv
+GP-UCB sampling log: logs/exp_20251016_070319_2128982/gp_sampling_log.csv
+
+============================================================
+Compliance-Gated Workflow Search
+============================================================
+Experiment: exp_20251016_070319_2128982
+Directory: logs/exp_20251016_070319_2128982
+============================================================
+Configuration:
+  Red Agent: RedMeanderAgent
+  Parallel Environments: 200
+  Episode Budget: 500
+  Max Episodes per Workflow: 50
+  Compliance Threshold: 95.0%
+  Alignment Lambda: 30.0
+  Shared Memory: Enabled (17x speedup!)
+
+Training Strategy:
+  1. Train with alignment rewards until compliance >= 95.0%
+  2. Use training environment rewards for GP-UCB
+  3. Continue until 500 episodes are used
+============================================================
+
+==================================================
+Iteration 1
+Episode Budget: 0/500 used
+==================================================
+
+--------------------------------------------------
+GP-UCB Selection Details:
+  Selected: user → op_host → op_server → enterprise → defender
+  UCB Score: 0.000
+  Method: random
+  Reason: initial_random
+--------------------------------------------------
+
+============================================================
+Training with workflow: user → op_host → op_server → enterprise → defender
+Goal: Train until compliance >= 95.0%
+Using 200 parallel environments
+============================================================
+Gym has been unmaintained since 2022 and does not support NumPy 2.0 amongst other critical functionality.
+Please upgrade to Gymnasium, the maintained drop-in replacement of Gym, or contact the authors of your software and request that they upgrade.
+Users of this version of Gym should be able to simply replace 'import gym' with 'import gymnasium as gym' in the vast majority of cases.
+See the migration guide at https://gymnasium.farama.org/introduction/migration_guide/ for additional information.
+Using device: cuda
+
+============================================================
+Configuration
+============================================================
+Red Agent: bline (B_lineAgent)
+Parallel Envs: 200
+Episode Budget: 500
+Max Episodes/Workflow: 50
+Alignment Lambda: 30.0
+Compliance Threshold: 95.0%
+Checkpoint Dir: compliance_checkpoints
+Random Seed: 42
+============================================================
+
+Starting experiment with PID: 2147419
+Experiment config: logs/exp_20251016_070459_2147419/experiment_config.json
+Experiment directory: logs/exp_20251016_070459_2147419
+Training log: logs/exp_20251016_070459_2147419/training_log.csv
+GP-UCB sampling log: logs/exp_20251016_070459_2147419/gp_sampling_log.csv
+
+============================================================
+Compliance-Gated Workflow Search
+============================================================
+Experiment: exp_20251016_070459_2147419
+Directory: logs/exp_20251016_070459_2147419
+============================================================
+Configuration:
+  Red Agent: B_lineAgent
+  Parallel Environments: 200
+  Episode Budget: 500
+  Max Episodes per Workflow: 50
+  Compliance Threshold: 95.0%
+  Alignment Lambda: 30.0
+  Shared Memory: Enabled (17x speedup!)
+
+Training Strategy:
+  1. Train with alignment rewards until compliance >= 95.0%
+  2. Use training environment rewards for GP-UCB
+  3. Continue until 500 episodes are used
+============================================================
+
+==================================================
+Iteration 1
+Episode Budget: 0/500 used
+==================================================
+
+--------------------------------------------------
+GP-UCB Selection Details:
+  Selected: user → op_host → op_server → enterprise → defender
+  UCB Score: 0.000
+  Method: random
+  Reason: initial_random
+--------------------------------------------------
+
+============================================================
+Training with workflow: user → op_host → op_server → enterprise → defender
+Goal: Train until compliance >= 95.0%
+Using 200 parallel environments
+============================================================
+/home/ubuntu/miniconda3/envs/CAGE2/lib/python3.11/multiprocessing/resource_tracker.py:254: UserWarning: resource_tracker: There appear to be 3 leaked shared_memory objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '
+/home/ubuntu/miniconda3/envs/CAGE2/lib/python3.11/multiprocessing/resource_tracker.py:254: UserWarning: resource_tracker: There appear to be 3 leaked shared_memory objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '
+/home/ubuntu/miniconda3/envs/CAGE2/lib/python3.11/multiprocessing/resource_tracker.py:254: UserWarning: resource_tracker: There appear to be 3 leaked shared_memory objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '

@@ -157,16 +157,41 @@ class ParallelEnvSharedMemory:
         self.cmd_queues = [Queue() for _ in range(n_envs)]
         self.result_queue = Queue()
         
-        # Start worker processes
+        # Start worker processes with staggered initialization for large counts
         self.processes = []
+        batch_size = 50  # Start processes in batches
+        
+        if n_envs >= 50:
+            print(f"  Starting {n_envs} parallel environments...")
+        
         for i in range(n_envs):
             p = Process(target=worker_process_shm,
                        args=(i, self.obs_shm.name, self.reward_shm.name, 
                             self.done_shm.name, self.cmd_queues[i],
                             self.result_queue, make_env))
             p.daemon = True
-            p.start()
-            self.processes.append(p)
+            
+            try:
+                p.start()
+                self.processes.append(p)
+                
+                # Add small delay every batch_size processes to avoid overwhelming system
+                if (i + 1) % batch_size == 0:
+                    import time
+                    if n_envs >= 50:
+                        print(f"    Started {i+1}/{n_envs} environments...")
+                    time.sleep(0.1)  # 100ms pause every batch
+                    
+            except Exception as e:
+                print(f"Error starting process {i}: {e}")
+                # Clean up already started processes
+                for proc in self.processes:
+                    if proc.is_alive():
+                        proc.terminate()
+                raise RuntimeError(f"Failed to start worker process {i}: {e}")
+        
+        if n_envs >= 50:
+            print(f"    ✓ All {n_envs} environments started successfully")
         
         # Initial reset
         self.reset()
