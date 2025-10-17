@@ -3,10 +3,15 @@ Parallel Training for Workflow-Conditioned RL using multiple environments
 """
 
 import os
+import sys
+# Add parent directory to path for imports
+sys.path.insert(0, '/home/ubuntu/CAGE2/-cyborg-cage-2')
+
 import numpy as np
 import torch
 import json
 import csv
+import time
 import argparse
 from typing import List, Tuple, Dict
 from datetime import datetime
@@ -20,15 +25,16 @@ from workflow_rl.gp_ucb_order_search import GPUCBOrderSearch
 from workflow_rl.parallel_order_conditioned_ppo import ParallelOrderConditionedPPO, device
 from workflow_rl.parallel_env_wrapper import ParallelEnvWrapper
 from workflow_rl.parallel_env_shared_memory import ParallelEnvSharedMemory
+from workflow_rl.parallel_env_shared_memory_optimized import ParallelEnvSharedMemoryOptimized
 
 
 class ParallelWorkflowRLTrainer:
     """Main trainer for workflow search-based RL with parallel environments"""
     
     def __init__(self, 
-                 n_envs: int = 200,
-                 total_episode_budget: int = 500,  # Total episodes across all workflows
-                 max_train_episodes_per_env: int = 50,  # Max episodes per workflow before giving up
+                 n_envs: int = 100,
+                 total_episode_budget: int = 100000,  # Total episodes across all workflows
+                 max_train_episodes_per_env: int = 100,  # Max episodes per workflow before giving up
                  max_steps: int = 100,
                  scenario_path: str = '/home/ubuntu/CAGE2/cage-challenge-2/CybORG/CybORG/Shared/Scenarios/Scenario2.yaml',
                  red_agent_type=RedMeanderAgent,
@@ -37,7 +43,7 @@ class ParallelWorkflowRLTrainer:
                  checkpoint_dir: str = 'checkpoints',
                  compliance_threshold: float = 0.95,  # Must achieve this before evaluation
                  n_eval_episodes: int = 20,  # Episodes for evaluation (not used anymore)
-                 update_every_steps: int = 100):  # Update every 100 steps (full episode) = 20000 transitions with 200 envs
+                 update_every_steps: int = 100):  # Update every 100 steps (full episode) = 10000 transitions with 100 envs
         """
         Initialize parallel trainer
         
@@ -234,12 +240,13 @@ class ParallelWorkflowRLTrainer:
         
         workflow_str = ' → '.join(workflow_order)
         
-        # Create parallel environments with shared memory for speed
-        # Using shared memory eliminates serialization overhead (17x speedup!)
-        envs = ParallelEnvSharedMemory(
+        # Create parallel environments with optimized shared memory
+        # Using dedicated pipes and caching for 3.4x speedup with true states!
+        envs = ParallelEnvSharedMemoryOptimized(
             n_envs=self.n_envs,
             scenario_path=self.scenario_path,
-            red_agent_type=self.red_agent_type
+            red_agent_type=self.red_agent_type,
+            sparse_true_states=False  # Keep getting states as before for now
         )
         
         # Create or reuse PPO agent (policy inheritance across workflows)
@@ -286,6 +293,12 @@ class ParallelWorkflowRLTrainer:
         episode_fix_counts = [[] for _ in range(self.n_envs)]  # Fixes per episode
         episode_counts = np.zeros(self.n_envs, dtype=int)
         episode_dones = np.zeros(self.n_envs, dtype=bool)
+        
+        # Timing metrics
+        update_times = []
+        sampling_times = []
+        update_count = 0
+        sampling_start = time.time()
         
         # Episode tracking
         current_episode_rewards = np.zeros(self.n_envs)  # Pure env rewards
@@ -411,11 +424,20 @@ class ParallelWorkflowRLTrainer:
                 else:
                     episode_dones[env_idx] = False
             
-            # PPO update if needed (happens every 25 episodes with 25 envs)
+            # PPO update if needed (happens every 100 steps with 100 envs)
             if agent.should_update():
-                agent.update()
+                # Measure sampling time
+                sampling_time = time.time() - sampling_start
+                sampling_times.append(sampling_time)
                 
-                # Progress report after every update (every 25 episodes)
+                # Measure update time
+                update_start = time.time()
+                agent.update()
+                update_time = time.time() - update_start
+                update_times.append(update_time)
+                update_count += 1
+                
+                # Progress report after every update
                 total_episodes = np.sum(episode_counts)
                 
                 # Calculate average rewards and compliance from the last completed episodes
@@ -460,13 +482,23 @@ class ParallelWorkflowRLTrainer:
                     ])
                     self.consolidated_log_file.flush()
                     
-                    print(f"\n  Update {total_steps // self.update_every_steps}: "
+                    # Timing statistics
+                    avg_update_time = np.mean(update_times) if update_times else 0
+                    avg_sampling_time = np.mean(sampling_times) if sampling_times else 0
+                    update_ratio = avg_update_time / (avg_update_time + avg_sampling_time) * 100 if (avg_update_time + avg_sampling_time) > 0 else 0
+                    
+                    print(f"\n  Update {update_count}: "
                           f"Episodes: {int(total_episodes)} total")
                     print(f"    Env Reward/Episode: {avg_env_reward:.2f}")
                     print(f"    Total Reward/Episode: {avg_total_reward:.2f}")
                     print(f"    Alignment Bonus (episode-end): {avg_alignment_bonus:+.2f}")
                     print(f"    Compliance: {avg_compliance:.2%}")
                     print(f"    Avg Fixes/Episode: {avg_fixes_per_episode:.1f}")
+                    print(f"    ⏱️ Timing: Sampling={sampling_time:.2f}s, Update={update_time:.2f}s")
+                    print(f"    📊 Average: Sampling={avg_sampling_time:.2f}s, Update={avg_update_time:.2f}s (PPO takes {update_ratio:.1f}% of time)")
+                
+                # Reset sampling timer
+                sampling_start = time.time()
             
             total_steps += 1
             
@@ -509,6 +541,19 @@ class ParallelWorkflowRLTrainer:
         
         # Close environments
         envs.close()
+        
+        # Report final timing breakdown if we have timing data
+        if update_times:
+            total_time = time.time() - sampling_start + sum(sampling_times) + sum(update_times)
+            total_update_time = sum(update_times)
+            total_sampling_time = sum(sampling_times)
+            print(f"\n📊 Timing Breakdown for Workflow {workflow_id}:")
+            print(f"   Total time: {total_time:.1f}s")
+            print(f"   Total sampling time: {total_sampling_time:.1f}s ({total_sampling_time/total_time*100:.1f}%)")
+            print(f"   Total PPO update time: {total_update_time:.1f}s ({total_update_time/total_time*100:.1f}%)")
+            print(f"   Other (logging, etc): {total_time - total_sampling_time - total_update_time:.1f}s")
+            print(f"   Updates performed: {len(update_times)}")
+            print(f"   Avg time per update: {np.mean(update_times):.2f}s")
         
         # Calculate training stats
         all_final_compliances = []
@@ -883,11 +928,11 @@ def parse_args():
     
     # Environment Configuration
     env_group = parser.add_argument_group('Environment Configuration')
-    env_group.add_argument('--n-envs', type=int, default=200,
+    env_group.add_argument('--n-envs', type=int, default=100,
                           help='Number of parallel environments')
-    env_group.add_argument('--total-episodes', type=int, default=500,
+    env_group.add_argument('--total-episodes', type=int, default=100000,
                           help='Total episode budget across all workflows')
-    env_group.add_argument('--max-episodes', type=int, default=50,
+    env_group.add_argument('--max-episodes', type=int, default=100,
                           help='Max episodes per workflow before giving up')
     env_group.add_argument('--max-steps', type=int, default=100,
                           help='Max steps per episode')
