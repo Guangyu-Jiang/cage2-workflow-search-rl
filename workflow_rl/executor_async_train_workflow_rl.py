@@ -201,13 +201,10 @@ class ExecutorAsyncWorkflowRLTrainer:
         self.checkpoint_dir = os.path.join("logs", self.experiment_name)
         os.makedirs(self.checkpoint_dir, exist_ok=True)
         
-        print(f"\n🚀 Starting EXECUTOR ASYNC experiment with PID: {pid}")
-        print(f"   TRUE async: {n_workers} workers with ProcessPoolExecutor!")
+        print(f"\nStarting experiment with PID: {pid}")
         
         # Create ProcessPoolExecutor
-        print(f"👷 Creating ProcessPoolExecutor with {n_workers} workers...")
         self.executor = ProcessPoolExecutor(max_workers=n_workers)
-        print(f"✅ Executor ready!\n")
         
         # Initialize workflow manager and GP-UCB
         self.workflow_manager = OrderBasedWorkflow()
@@ -221,8 +218,12 @@ class ExecutorAsyncWorkflowRLTrainer:
     
     def _init_logging(self):
         """Initialize CSV logging"""
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        log_filename = os.path.join(self.checkpoint_dir, f"training_log_{timestamp}.csv")
+        # Save config
+        config_file = os.path.join(self.checkpoint_dir, 'experiment_config.json')
+        print(f"Experiment config: {config_file}")
+        
+        # Training log
+        log_filename = os.path.join(self.checkpoint_dir, "training_log.csv")
         self.log_file = open(log_filename, 'w', newline='')
         self.csv_writer = csv.writer(self.log_file)
         self.csv_writer.writerow([
@@ -230,7 +231,8 @@ class ExecutorAsyncWorkflowRLTrainer:
             'Avg_Reward', 'Compliance', 'Collection_Time', 'Update_Time'
         ])
         self.log_file.flush()
-        print(f"📊 Training log: {log_filename}")
+        print(f"Experiment directory: {self.checkpoint_dir}")
+        print(f"Training log: {log_filename}")
         
         # GP log
         gp_log_filename = os.path.join(self.checkpoint_dir, "gp_sampling_log.csv")
@@ -238,7 +240,7 @@ class ExecutorAsyncWorkflowRLTrainer:
         self.gp_csv_writer = csv.writer(self.gp_log_file)
         self.gp_csv_writer.writerow(['Iteration', 'Workflow', 'UCB_Score', 'Reward'])
         self.gp_log_file.flush()
-        print(f"📈 GP-UCB log: {gp_log_filename}\n")
+        print(f"GP-UCB sampling log: {gp_log_filename}")
     
     def collect_episodes_async(self, agent, workflow_order: List[str], 
                                n_episodes: int) -> Tuple:
@@ -308,6 +310,8 @@ class ExecutorAsyncWorkflowRLTrainer:
         all_log_probs = []
         all_values = []
         compliances = []
+        fix_counts = []
+        episode_rewards = []
         
         for episode in completed_episodes:
             all_states.extend(episode['states'])
@@ -317,21 +321,24 @@ class ExecutorAsyncWorkflowRLTrainer:
             all_log_probs.extend(episode['log_probs'])
             all_values.extend(episode['values'])
             compliances.append(episode['compliance'])
+            fix_counts.append(episode['total_fix_actions'])
+            episode_rewards.append(episode['total_reward'])
         
         return (np.array(all_states), np.array(all_actions), np.array(all_rewards),
                 np.array(all_dones), np.array(all_log_probs), np.array(all_values),
-                compliances, elapsed)
+                compliances, fix_counts, episode_rewards, elapsed)
     
     def train_workflow_async(self, workflow_order: List[str], workflow_id: int):
         """Train workflow using ProcessPoolExecutor async collection"""
         print(f"\n{'='*60}")
-        print(f"🎯 EXECUTOR ASYNC Training: {' → '.join(workflow_order)}")
-        print(f"   {self.n_workers} workers collect independently!")
-        print(f"{'='*60}\n")
+        print(f"Training with workflow: {' → '.join(workflow_order)}")
+        print(f"Goal: Train until compliance >= {self.compliance_threshold:.1%}")
+        print(f"Using {self.n_workers} async workers (ProcessPoolExecutor)")
+        print(f"{'='*60}")
         
         # Create or inherit agent
         if self.shared_agent is None:
-            print("🆕 Creating new agent")
+            print("  Creating new agent (first workflow)")
             cyborg = CybORG(self.scenario_path, 'sim', agents={'Red': self.red_agent_type})
             env = ChallengeWrapper2(env=cyborg, agent_name='Blue')
             obs_dim = env.observation_space.shape[0]
@@ -350,7 +357,7 @@ class ExecutorAsyncWorkflowRLTrainer:
                 lr=0.002
             )
         else:
-            print("♻️  Inheriting from previous workflow")
+            print("  Inheriting policy from previous workflow")
             from workflow_rl.parallel_order_conditioned_ppo import ParallelOrderConditionedPPO, device
             
             obs_dim = self.shared_agent.input_dims
@@ -371,22 +378,30 @@ class ExecutorAsyncWorkflowRLTrainer:
         # Training loop
         total_episodes = 0
         update_num = 0
+        all_sampling_times = []
+        all_update_times = []
         
         while total_episodes < self.max_train_episodes_per_workflow:
-            update_num += 1
-            print(f"🔄 Update {update_num}")
             
             # Collect episodes asynchronously
             (states, actions, rewards, dones, log_probs, values,
-             compliances, collection_time) = self.collect_episodes_async(
+             compliances, fix_counts, episode_rewards, collection_time) = self.collect_episodes_async(
                 agent, workflow_order, self.episodes_per_update
             )
             
+            update_num += 1
             total_episodes += self.episodes_per_update
-            current_compliance = np.mean(compliances)
+            
+            # Calculate metrics per episode
+            avg_env_reward = np.mean(episode_rewards)  # Raw episode rewards
+            avg_compliance = np.mean(compliances)
+            avg_fixes = np.mean(fix_counts)
+            
+            # Estimate alignment bonus from compliance
+            alignment_bonus = self.alignment_lambda * avg_compliance
+            total_reward = avg_env_reward + alignment_bonus
             
             # PPO update
-            print(f"🔄 Performing PPO update...")
             update_start = time.time()
             
             # Compute returns
@@ -430,24 +445,36 @@ class ExecutorAsyncWorkflowRLTrainer:
             agent.policy_old.load_state_dict(agent.policy.state_dict())
             
             update_time = time.time() - update_start
+            all_sampling_times.append(collection_time)
+            all_update_times.append(update_time)
             
-            print(f"✅ Update complete ({update_time:.2f}s)")
-            print(f"   Episodes: {total_episodes}/{self.max_train_episodes_per_workflow}")
-            print(f"   Compliance: {current_compliance:.1%}")
-            print(f"   Avg reward: {np.mean(rewards):.1f}")
-            print(f"   ⏱️  Collection: {collection_time:.1f}s, Update: {update_time:.1f}s")
-            print(f"   📊 Collection takes {collection_time/(collection_time+update_time)*100:.1f}% of time\n")
+            # Calculate average timing statistics
+            avg_sampling_time = np.mean(all_sampling_times)
+            avg_update_time = np.mean(all_update_times)
+            update_ratio = avg_update_time / (avg_sampling_time + avg_update_time) * 100
+            
+            # Print progress in same format as synchronous version
+            print(f"\n  Update {update_num}: Episodes: {total_episodes} total")
+            print(f"    Env Reward/Episode: {avg_env_reward:.2f}")
+            print(f"    Total Reward/Episode: {total_reward:.2f}")
+            print(f"    Alignment Bonus (episode-end): {alignment_bonus:+.2f}")
+            print(f"    Compliance: {avg_compliance:.2%}")
+            print(f"    Avg Fixes/Episode: {avg_fixes:.1f}")
+            print(f"    ⏱️ Timing: Sampling={collection_time:.2f}s, Update={update_time:.2f}s")
+            print(f"    📊 Average: Sampling={avg_sampling_time:.2f}s, Update={avg_update_time:.2f}s (PPO takes {update_ratio:.1f}% of time)")
             
             # Log
             self.csv_writer.writerow([
                 workflow_id, ' → '.join(workflow_order), update_num, total_episodes,
-                np.mean(rewards), current_compliance, collection_time, update_time
+                avg_env_reward, avg_compliance, collection_time, update_time
             ])
             self.log_file.flush()
             
             # Check compliance
-            if current_compliance >= self.compliance_threshold:
-                print(f"🎉 Compliance threshold {self.compliance_threshold:.1%} achieved!\n")
+            if avg_compliance >= self.compliance_threshold:
+                print(f"\n  ✓ Compliance threshold achieved!")
+                print(f"    Episodes trained: {total_episodes}")
+                print(f"    Latest compliance: {avg_compliance:.2%}")
                 break
         
         # Save agent
@@ -460,24 +487,35 @@ class ExecutorAsyncWorkflowRLTrainer:
     
     def run_workflow_search(self):
         """Run GP-UCB workflow search with ProcessPoolExecutor async training"""
-        print("\n" + "="*60)
-        print("🚀 EXECUTOR ASYNC Workflow Search")
-        print("="*60)
-        print(f"Architecture: ProcessPoolExecutor with TRUE async")
-        print(f"Workers: {self.n_workers}")
-        print(f"Episode budget: {self.total_episode_budget}")
-        print(f"Episodes per update: {self.episodes_per_update}")
-        print("="*60 + "\n")
+        print(f"\n{'='*60}")
+        print(f"Compliance-Gated Workflow Search (Async)")
+        print(f"{'='*60}")
+        print(f"Experiment: {self.experiment_name}")
+        print(f"Directory: {self.checkpoint_dir}")
+        print(f"{'='*60}")
+        print(f"Configuration:")
+        print(f"  Red Agent: {self.red_agent_type.__name__}")
+        print(f"  Async Workers: {self.n_workers}")
+        print(f"  Episode Budget: {self.total_episode_budget}")
+        print(f"  Compliance Threshold: {self.compliance_threshold:.1%}")
+        print(f"  Alignment Lambda: {self.alignment_lambda}")
+        print(f"  Architecture: ProcessPoolExecutor (TRUE async!)")
+        print(f"\nTraining Strategy:")
+        print(f"  1. Train with alignment rewards until compliance >= {self.compliance_threshold:.1%}")
+        print(f"  2. Use training environment rewards for GP-UCB")
+        print(f"  3. Continue until {self.total_episode_budget} episodes are used")
+        print(f"  4. Workers collect episodes INDEPENDENTLY (no sync barriers!)")
+        print(f"{'='*60}")
         
         iteration = 0
         
         while self.total_episodes_used < self.total_episode_budget:
             iteration += 1
             
-            print(f"\n{'='*60}")
-            print(f"🎲 Iteration {iteration}")
-            print(f"   Episodes used: {self.total_episodes_used}/{self.total_episode_budget}")
-            print(f"{'='*60}\n")
+            print(f"\n{'='*50}")
+            print(f"Iteration {iteration}")
+            print(f"Episode Budget: {self.total_episodes_used}/{self.total_episode_budget} used")
+            print(f"{'='*50}")
             
             # Select workflow
             if iteration <= 5:
@@ -495,8 +533,21 @@ class ExecutorAsyncWorkflowRLTrainer:
                 candidate_orders, self.workflow_manager
             )
             
-            print(f"Selected workflow: {' → '.join(workflow_order)}")
-            print(f"UCB score: {ucb_score:.4f}\n")
+            # Print GP-UCB selection details (match synchronous format)
+            print("\n" + "-"*50)
+            print("GP-UCB Selection Details:")
+            print(f"  Selected: {' → '.join(workflow_order)}")
+            print(f"  UCB Score: {ucb_score:.3f}")
+            
+            if 'selection_method' in info:
+                print(f"  Method: {info['selection_method']}")
+                print(f"  Reason: {info['reason']}")
+            else:
+                if 'mean' in info:
+                    print(f"  Mean Reward: {info['mean']:.2f}")
+                if 'std' in info:
+                    print(f"  Uncertainty (std): {info['std']:.3f}")
+            print("-"*50)
             
             # Train workflow
             eval_reward, compliance, episodes_used = self.train_workflow_async(
@@ -549,14 +600,18 @@ def main():
     }
     red_agent = agent_map[args.red_agent]
     
-    print("\n" + "="*60)
-    print("🚀 PROCESSPOOL EXECUTOR ASYNC TRAINING")
-    print("="*60)
-    print(f"Workers: {args.n_workers} (TRUE async!)")
+    print(f"\n{'='*60}")
+    print(f"Configuration")
+    print(f"{'='*60}")
+    print(f"Red Agent: {args.red_agent} ({red_agent.__name__})")
+    print(f"Async Workers: {args.n_workers}")
     print(f"Episode Budget: {args.total_episodes}")
-    print(f"Episodes/Update: {args.episodes_per_update}")
-    print(f"Using Python's built-in ProcessPoolExecutor")
-    print("="*60 + "\n")
+    print(f"Max Episodes/Workflow: {args.max_episodes_per_workflow}")
+    print(f"Alignment Lambda: {args.alignment_lambda}")
+    print(f"Compliance Threshold: {args.compliance_threshold:.1%}")
+    print(f"Architecture: ProcessPoolExecutor (Async)")
+    print(f"Random Seed: 42")
+    print(f"{'='*60}\n")
     
     trainer = ExecutorAsyncWorkflowRLTrainer(
         n_workers=args.n_workers,
