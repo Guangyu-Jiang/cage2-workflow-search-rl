@@ -116,17 +116,19 @@ def collect_single_episode(worker_id: int, scenario_path: str, red_agent_type,
                 if hostname == 'success':
                     continue
                 
-                # Check if this host is compromised
-                is_compromised = (
-                    host_info.get('System info', {}).get('Compromised', False) or
-                    (host_info.get('Interface', [{}])[0].get('Compromised', False)
-                     if host_info.get('Interface') else False)
-                )
+                # Check if this host is compromised by checking for Red agent sessions
+                is_compromised = False
+                if 'Sessions' in host_info:
+                    for session in host_info['Sessions']:
+                        if session.get('Agent') == 'Red':
+                            is_compromised = True
+                            break
                 
                 if is_compromised:
                     # Determine unit type from hostname
+                    hostname_lower = hostname.lower()
                     for unit_type in ['defender', 'enterprise', 'op_server', 'op_host', 'user']:
-                        if unit_type in hostname.lower():
+                        if unit_type in hostname_lower or unit_type.replace('_', '') in hostname_lower:
                             compromised_types.add(unit_type)
                             break
             
