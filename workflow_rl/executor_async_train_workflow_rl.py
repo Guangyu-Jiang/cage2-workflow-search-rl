@@ -483,7 +483,7 @@ class ExecutorAsyncWorkflowRLTrainer:
         torch.save(agent.policy.state_dict(), checkpoint_path)
         print(f"💾 Saved checkpoint: {checkpoint_path}\n")
         
-        return np.mean(rewards), current_compliance, total_episodes
+        return np.mean(rewards), avg_compliance, total_episodes
     
     def run_workflow_search(self):
         """Run GP-UCB workflow search with ProcessPoolExecutor async training"""
