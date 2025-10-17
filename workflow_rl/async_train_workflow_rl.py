@@ -458,13 +458,29 @@ class AsyncWorkflowRLTrainer:
             print(f"   Episodes used: {self.total_episodes_used}/{self.total_episode_budget}")
             print(f"{'='*60}\n")
             
-            # Select workflow
-            workflow_order, workflow_id, info = self.gp_search.select_workflow(
-                self.workflow_manager
+            # Select workflow using GP-UCB
+            # Get candidate orders
+            if iteration <= 5:
+                # Use canonical orders for first few iterations
+                candidate_orders = self.workflow_manager.get_canonical_workflows()
+            else:
+                # Use random permutations as candidates
+                unit_types = ['defender', 'enterprise', 'op_server', 'op_host', 'user']
+                candidate_orders = []
+                for _ in range(10):
+                    perm = unit_types.copy()
+                    np.random.shuffle(perm)
+                    candidate_orders.append(perm)
+            
+            workflow_order, ucb_score, info = self.gp_search.select_next_order(
+                candidate_orders, self.workflow_manager
             )
             
             print(f"Selected workflow: {' → '.join(workflow_order)}")
-            print(f"UCB score: {info.get('ucb_score', 0):.4f}\n")
+            print(f"UCB score: {ucb_score:.4f}\n")
+            
+            # Use iteration as workflow_id for checkpoint naming
+            workflow_id = iteration
             
             # Train workflow
             eval_reward, compliance, episodes_used, success = self.train_workflow_async(
@@ -473,10 +489,11 @@ class AsyncWorkflowRLTrainer:
             
             self.total_episodes_used += episodes_used
             
-            # Update GP model
-            self.gp_search.update(workflow_id, eval_reward)
+            # Update GP model with observed reward
+            self.gp_search.add_observation(workflow_order, eval_reward)
             
             print(f"📈 GP model updated")
+            print(f"   Workflow: {' → '.join(workflow_order)}")
             print(f"   Reward: {eval_reward:.2f}")
             print(f"   Compliance: {compliance:.1%}\n")
         
