@@ -40,17 +40,20 @@ def collect_single_episode(worker_id: int, scenario_path: str, red_agent_type,
     cyborg = CybORG(scenario_path, 'sim', agents={'Red': red_agent_type})
     env = ChallengeWrapper2(env=cyborg, agent_name='Blue')
     
-    # Unit priorities for workflow compliance
-    unit_priorities = {
-        'defender': 5,
-        'enterprise': 4,
-        'op_server': 3,
-        'op_host': 2,
-        'user': 1
+    # Action ID to host type mapping (from CAGE2 action space)
+    action_to_host_type = {
+        # Remove actions
+        15: 'defender', 16: 'enterprise', 17: 'enterprise', 18: 'enterprise',
+        19: 'op_host', 20: 'op_host', 21: 'op_host', 22: 'op_server',
+        23: 'user', 24: 'user', 25: 'user', 26: 'user', 27: 'user',
+        # Restore actions  
+        132: 'defender', 133: 'enterprise', 134: 'enterprise', 135: 'enterprise',
+        136: 'op_host', 137: 'op_host', 138: 'op_host', 139: 'op_server',
+        140: 'user', 141: 'user', 142: 'user', 143: 'user', 144: 'user'
     }
     
-    # Build priority map from workflow order
-    workflow_priorities = {unit: priority for priority, unit in enumerate(reversed(workflow_order), 1)}
+    # Track which types have been fixed
+    fixed_types = set()
     
     # Reconstruct policy from weights (on CPU)
     import torch
@@ -99,82 +102,32 @@ def collect_single_episode(worker_id: int, scenario_path: str, red_agent_type,
         
         action = action_tensor.item()
         
-        # Get true state before action
-        true_state_before = cyborg.get_agent_state('True')
-        
         # Execute
         next_state, reward, done, info = env.step(action)
         
-        # Get true state after action
-        true_state_after = cyborg.get_agent_state('True')
-        
-        # Track compliance for fix actions (action IDs 132-144 are Restore actions)
-        if 132 <= action <= 144:
+        # Track compliance for fix actions using action-to-host-type mapping
+        # (Remove: 15-27, Restore: 132-144)
+        if action in action_to_host_type:
             total_fix_actions += 1
+            target_type = action_to_host_type[action]
             
-            # Check if this fix follows workflow priority
-            if prev_true_state is not None:
-                # Identify which host was fixed
-                fixed_hosts = []
-                for hostname in true_state_before.keys():
-                    if hostname != 'success':
-                        host_before = true_state_before.get(hostname, {})
-                        host_after = true_state_after.get(hostname, {})
-                        
-                        # Check if host went from compromised to clean
-                        was_compromised = (
-                            host_before.get('System info', {}).get('Compromised', False) or
-                            (host_before.get('Interface', [{}])[0].get('Compromised', False) 
-                             if host_before.get('Interface') else False)
-                        )
-                        is_clean = not (
-                            host_after.get('System info', {}).get('Compromised', False) or
-                            (host_after.get('Interface', [{}])[0].get('Compromised', False)
-                             if host_after.get('Interface') else False)
-                        )
-                        
-                        if was_compromised and is_clean:
-                            fixed_hosts.append(hostname)
-                
-                # Check if fix follows workflow priority
-                if fixed_hosts:
-                    for fixed_host in fixed_hosts:
-                        # Determine unit type of fixed host
-                        fixed_unit_type = None
-                        for unit_type in workflow_priorities.keys():
-                            if unit_type in fixed_host.lower():
-                                fixed_unit_type = unit_type
-                                break
-                        
-                        if fixed_unit_type:
-                            # Check if there are higher priority hosts still compromised
-                            is_compliant = True
-                            fixed_priority = workflow_priorities[fixed_unit_type]
-                            
-                            for hostname in true_state_after.keys():
-                                if hostname != 'success':
-                                    host_info = true_state_after.get(hostname, {})
-                                    is_compromised = (
-                                        host_info.get('System info', {}).get('Compromised', False) or
-                                        (host_info.get('Interface', [{}])[0].get('Compromised', False)
-                                         if host_info.get('Interface') else False)
-                                    )
-                                    
-                                    if is_compromised:
-                                        # Check if this compromised host has higher priority
-                                        for unit_type in workflow_priorities.keys():
-                                            if unit_type in hostname.lower():
-                                                if workflow_priorities[unit_type] > fixed_priority:
-                                                    is_compliant = False
-                                                    break
-                                        if not is_compliant:
-                                            break
-                            
-                            if is_compliant:
-                                compliant_fix_actions += 1
-                                break  # Count fix as compliant
-        
-        prev_true_state = true_state_after
+            # Check if this violates workflow order
+            # Violation = fixing this type before higher priority types
+            target_priority = workflow_order.index(target_type)
+            
+            violation = False
+            for priority_idx in range(target_priority):
+                priority_type = workflow_order[priority_idx]
+                if priority_type not in fixed_types:
+                    # Higher priority type not fixed yet - violation!
+                    violation = True  # ← FIXED: was False!
+                    break
+            
+            if not violation:
+                compliant_fix_actions += 1
+            
+            # Mark this type as fixed
+            fixed_types.add(target_type)
         
         # Store
         episode_states.append(augmented_state.squeeze().numpy())
@@ -191,8 +144,12 @@ def collect_single_episode(worker_id: int, scenario_path: str, red_agent_type,
         if done:
             break
     
-    # Compute episode compliance
-    episode_compliance = compliant_fix_actions / max(total_fix_actions, 1)
+    # Compute episode compliance (same as synchronous version)
+    if total_fix_actions > 0:
+        episode_compliance = compliant_fix_actions / total_fix_actions
+    else:
+        # No fix actions - return 0.5 (neutral) to match synchronous version
+        episode_compliance = 0.5
     
     return {
         'worker_id': worker_id,
