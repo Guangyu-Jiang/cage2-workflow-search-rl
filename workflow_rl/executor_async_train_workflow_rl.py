@@ -533,18 +533,19 @@ class ExecutorAsyncWorkflowRLTrainer:
             print(f"Episode Budget: {self.total_episodes_used}/{self.total_episode_budget} used")
             print(f"{'='*50}")
             
-            # Select workflow
-            if iteration <= 5:
-                canonical_dict = self.workflow_manager.get_canonical_workflows()
-                candidate_orders = list(canonical_dict.values())
-            else:
-                unit_types = ['defender', 'enterprise', 'op_server', 'op_host', 'user']
-                candidate_orders = []
-                for _ in range(10):
-                    perm = unit_types.copy()
-                    np.random.shuffle(perm)
-                    candidate_orders.append(perm)
+            # Select workflow - evaluate ALL possible permutations
+            # Generate all 120 possible permutations of the 5 unit types
+            from itertools import permutations as iter_permutations
             
+            unit_types = ['defender', 'enterprise', 'op_server', 'op_host', 'user']
+            all_permutations = list(iter_permutations(unit_types))
+            
+            # Convert to list of lists
+            candidate_orders = [list(perm) for perm in all_permutations]
+            
+            print(f"  Evaluating UCB for ALL {len(candidate_orders)} possible workflows...")
+            
+            # GP-UCB evaluates all candidates and picks highest UCB
             workflow_order, ucb_score, info = self.gp_search.select_next_order(
                 candidate_orders, self.workflow_manager
             )

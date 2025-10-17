@@ -677,25 +677,18 @@ class ParallelWorkflowRLTrainer:
             print(f"{'='*50}")
             
             # 1. Select next workflow using GP-UCB
-            # Generate candidates if needed
-            if iteration == 0:
-                # Initialize with some diverse candidates
-                candidate_orders = [
-                    ['defender', 'enterprise', 'op_server', 'op_host', 'user'],
-                    ['op_server', 'defender', 'enterprise', 'op_host', 'user'],
-                    ['enterprise', 'op_server', 'defender', 'user', 'op_host'],
-                    ['user', 'op_host', 'op_server', 'enterprise', 'defender'],
-                    ['op_host', 'user', 'defender', 'enterprise', 'op_server'],
-                ]
-            else:
-                # Use random permutations as candidates
-                unit_types = ['defender', 'enterprise', 'op_server', 'op_host', 'user']
-                candidate_orders = []
-                for _ in range(10):
-                    perm = unit_types.copy()
-                    np.random.shuffle(perm)
-                    candidate_orders.append(perm)
+            # Evaluate ALL possible permutations (5! = 120 workflows)
+            from itertools import permutations as iter_permutations
             
+            unit_types = ['defender', 'enterprise', 'op_server', 'op_host', 'user']
+            all_permutations = list(iter_permutations(unit_types))
+            
+            # Convert to list of lists
+            candidate_orders = [list(perm) for perm in all_permutations]
+            
+            print(f"  Evaluating UCB for ALL {len(candidate_orders)} possible workflows...")
+            
+            # GP-UCB evaluates all 120 candidates and picks highest UCB
             workflow_order, ucb_score, info = self.gp_search.select_next_order(
                 candidate_orders, self.workflow_manager
             )
