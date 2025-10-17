@@ -52,9 +52,6 @@ def collect_single_episode(worker_id: int, scenario_path: str, red_agent_type,
         140: 'user', 141: 'user', 142: 'user', 143: 'user', 144: 'user'
     }
     
-    # Track which types have been fixed
-    fixed_types = set()
-    
     # Reconstruct policy from weights (on CPU)
     import torch
     from workflow_rl.order_conditioned_ppo import OrderConditionedActorCritic
@@ -87,6 +84,9 @@ def collect_single_episode(worker_id: int, scenario_path: str, red_agent_type,
     steps = 0
     
     for step in range(max_steps):
+        # Get TRUE STATE to check what's actually compromised
+        true_state = cyborg.get_agent_state('True')
+        
         # Prepare state
         state_tensor = torch.FloatTensor(state).unsqueeze(0).to(device_local)
         order_tensor = workflow_tensor.unsqueeze(0)
@@ -105,29 +105,48 @@ def collect_single_episode(worker_id: int, scenario_path: str, red_agent_type,
         # Execute
         next_state, reward, done, info = env.step(action)
         
-        # Track compliance for fix actions using action-to-host-type mapping
-        # (Remove: 15-27, Restore: 132-144)
+        # Track compliance for fix actions - check ACTUAL environment state
         if action in action_to_host_type:
             total_fix_actions += 1
             target_type = action_to_host_type[action]
             
-            # Check if this violates workflow order
-            # Violation = fixing this type before higher priority types
-            target_priority = workflow_order.index(target_type)
+            # Find which unit types are CURRENTLY compromised (from true state)
+            compromised_types = set()
+            for hostname, host_info in true_state.items():
+                if hostname == 'success':
+                    continue
+                
+                # Check if this host is compromised
+                is_compromised = (
+                    host_info.get('System info', {}).get('Compromised', False) or
+                    (host_info.get('Interface', [{}])[0].get('Compromised', False)
+                     if host_info.get('Interface') else False)
+                )
+                
+                if is_compromised:
+                    # Determine unit type from hostname
+                    for unit_type in ['defender', 'enterprise', 'op_server', 'op_host', 'user']:
+                        if unit_type in hostname.lower():
+                            compromised_types.add(unit_type)
+                            break
             
-            violation = False
-            for priority_idx in range(target_priority):
-                priority_type = workflow_order[priority_idx]
-                if priority_type not in fixed_types:
-                    # Higher priority type not fixed yet - violation!
-                    violation = True  # ← FIXED: was False!
-                    break
+            # Find HIGHEST PRIORITY compromised type according to workflow
+            highest_priority_compromised = None
+            for unit_type in workflow_order:
+                if unit_type in compromised_types:
+                    highest_priority_compromised = unit_type
+                    break  # First one in workflow order = highest priority
             
-            if not violation:
+            # Check if agent is fixing the highest priority compromised type
+            if highest_priority_compromised is None:
+                # No compromised hosts - any fix is acceptable
                 compliant_fix_actions += 1
-            
-            # Mark this type as fixed
-            fixed_types.add(target_type)
+            elif target_type == highest_priority_compromised:
+                # ✅ Fixing the CORRECT (highest priority) compromised type!
+                compliant_fix_actions += 1
+            else:
+                # ❌ Fixing lower priority when higher priority exists
+                pass
         
         # Store
         episode_states.append(augmented_state.squeeze().numpy())
@@ -604,10 +623,10 @@ class ExecutorAsyncWorkflowRLTrainer:
 
 def main():
     parser = argparse.ArgumentParser(description='ProcessPoolExecutor Async Workflow RL Training')
-    parser.add_argument('--n-workers', type=int, default=100)
+    parser.add_argument('--n-workers', type=int, default=25)
     parser.add_argument('--total-episodes', type=int, default=100000)
     parser.add_argument('--max-episodes-per-workflow', type=int, default=10000)
-    parser.add_argument('--episodes-per-update', type=int, default=100)
+    parser.add_argument('--episodes-per-update', type=int, default=25)
     parser.add_argument('--red-agent', type=str, default='B_lineAgent')
     parser.add_argument('--alignment-lambda', type=float, default=30.0)
     parser.add_argument('--compliance-threshold', type=float, default=0.95)
