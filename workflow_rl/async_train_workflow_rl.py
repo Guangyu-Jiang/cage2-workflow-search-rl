@@ -154,6 +154,7 @@ class AsyncWorkflowRLTrainer:
         
         Returns episode data aggregated across all environments.
         """
+        print(f"  ↳ collect_async_episodes called (n_episodes={n_episodes}, n_envs={self.n_envs})")
         from workflow_rl.parallel_env_shared_memory_optimized import ParallelEnvSharedMemoryOptimized
         
         workflow_encoding = self.workflow_manager.order_to_onehot(workflow_order)
@@ -170,13 +171,14 @@ class AsyncWorkflowRLTrainer:
         all_fix_counts = []
         
         # Create parallel environments (in separate processes!)
+        print(f"  ↳ Creating {self.n_envs} parallel environments...")
         envs = ParallelEnvSharedMemoryOptimized(
             n_envs=self.n_envs,
             scenario_path=self.scenario_path,
             red_agent_type=self.red_agent_type,
             sparse_true_states=False
         )
-        print(f"📦 Collecting {n_episodes} episodes using {self.n_envs} parallel workers...")
+        print(f"  ↳ Environments created! Starting collection...")
         
         # Track episode data per environment
         episode_rewards = [[] for _ in range(self.n_envs)]
@@ -364,7 +366,13 @@ class AsyncWorkflowRLTrainer:
         total_episodes = 0
         current_compliance = 0.0
         
+        print(f"📊 Starting training loop...")
+        print(f"   Max episodes: {self.max_train_episodes_per_env}")
+        print(f"   Episodes per update: {self.episodes_per_update}\n")
+        
         while total_episodes < self.max_train_episodes_per_env:
+            print(f"🔄 Update {total_episodes // self.episodes_per_update + 1}")
+            
             # Collect episodes asynchronously
             (states, actions, rewards, dones, log_probs, values,
              compliances, fix_counts) = self.collect_async_episodes(
