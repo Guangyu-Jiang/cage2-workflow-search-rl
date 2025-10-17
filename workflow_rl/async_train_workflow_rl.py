@@ -149,11 +149,13 @@ class AsyncWorkflowRLTrainer:
     def collect_async_episodes(self, agent, workflow_order: List[str],
                                n_episodes: int) -> Tuple:
         """
-        Collect episodes asynchronously from parallel environments.
-        Each environment runs independently until episode completion.
+        Collect episodes from parallel environments.
+        Uses parallel environments but collects complete episodes.
         
         Returns episode data aggregated across all environments.
         """
+        from workflow_rl.parallel_env_shared_memory_optimized import ParallelEnvSharedMemoryOptimized
+        
         workflow_encoding = self.workflow_manager.order_to_onehot(workflow_order)
         
         # Storage for collected data
@@ -167,122 +169,121 @@ class AsyncWorkflowRLTrainer:
         all_compliances = []
         all_fix_counts = []
         
-        # Create temporary environments for each worker
-        envs = []
-        cyborgs = []
-        for _ in range(self.n_envs):
-            cyborg = CybORG(self.scenario_path, 'sim', agents={'Red': self.red_agent_type})
-            env = ChallengeWrapper2(env=cyborg, agent_name='Blue')
-            envs.append(env)
-            cyborgs.append(cyborg)
+        # Create parallel environments (in separate processes!)
+        envs = ParallelEnvSharedMemoryOptimized(
+            n_envs=self.n_envs,
+            scenario_path=self.scenario_path,
+            red_agent_type=self.red_agent_type,
+            sparse_true_states=False
+        )
+        print(f"📦 Collecting {n_episodes} episodes using {self.n_envs} parallel workers...")
         
-        episodes_collected = 0
-        env_idx = 0
+        # Track episode data per environment
+        episode_rewards = [[] for _ in range(self.n_envs)]
+        episode_compliances = [[] for _ in range(self.n_envs)]
+        episode_counts = np.zeros(self.n_envs, dtype=int)
         
-        print(f"📦 Collecting {n_episodes} episodes asynchronously...")
+        current_episode_rewards = np.zeros(self.n_envs)
+        current_episode_steps = np.zeros(self.n_envs, dtype=int)
+        compliant_actions = np.zeros(self.n_envs)
+        total_fix_actions = np.zeros(self.n_envs)
+        
+        # Reset environments
+        observations = envs.reset()
+        prev_true_states = envs.get_true_states()
+        
         start_time = time.time()
+        total_transitions = 0
         
-        # Collect episodes round-robin from environments
-        while episodes_collected < n_episodes:
-            env = envs[env_idx]
-            cyborg = cyborgs[env_idx]
+        # Collect episodes in parallel until we have enough
+        while np.sum(episode_counts) < n_episodes:
+            # Prepare states with workflow encoding
+            state_tensors = torch.FloatTensor(observations).to(device)
+            order_tensor = torch.FloatTensor(workflow_encoding).unsqueeze(0).repeat(self.n_envs, 1).to(device)
+            augmented_states = torch.cat([state_tensors, order_tensor], dim=1)
             
-            # Run ONE complete episode
-            episode_states = []
-            episode_actions = []
-            episode_env_rewards = []
-            episode_dones = []
-            episode_log_probs = []
-            episode_values = []
+            # Get actions from policy
+            with torch.no_grad():
+                logits = agent.policy_old.actor(augmented_states)
+                dist = torch.distributions.Categorical(logits)
+                action_tensors = dist.sample()
+                log_probs = dist.log_prob(action_tensors)
+                values = agent.policy_old.critic(augmented_states)
             
-            state = env.reset()
-            prev_true_state = None
-            compliant_actions = 0
-            total_fix_actions = 0
+            actions = action_tensors.cpu().numpy()
             
-            for step in range(self.max_steps):
-                # Get true state before
-                true_state_before = cyborg.get_agent_state('True')
-                
-                # Prepare state with workflow encoding
-                state_tensor = torch.FloatTensor(state).unsqueeze(0).to(device)
-                order_tensor = torch.FloatTensor(workflow_encoding).unsqueeze(0).to(device)
-                augmented_state = torch.cat([state_tensor, order_tensor], dim=1)
-                
-                # Get action from policy
-                with torch.no_grad():
-                    logits = agent.policy_old.actor(augmented_state)
-                    dist = torch.distributions.Categorical(logits)
-                    action_tensor = dist.sample()
-                    log_prob = dist.log_prob(action_tensor)
-                    value = agent.policy_old.critic(augmented_state)
-                
-                action = action_tensor.item()
-                
-                # Execute action
-                next_state, env_reward, done, info = env.step(action)
-                
-                # Get true state after
-                true_state_after = cyborg.get_agent_state('True')
-                
+            # Step all environments in parallel
+            observations, env_rewards, dones, infos = envs.step(actions)
+            new_true_states = envs.get_true_states()
+            
+            # Store transitions and track episodes
+            for i in range(self.n_envs):
+                if np.sum(episode_counts) >= n_episodes:
+                    break
+                    
                 # Compute alignment reward
                 alignment_reward = 0
-                if prev_true_state is not None:
+                if prev_true_states[i] is not None:
                     alignment_reward = self._compute_alignment_reward(
-                        action, true_state_after, true_state_before, done,
-                        workflow_order, ref_compliant=compliant_actions,
-                        ref_total=total_fix_actions
+                        actions[i], new_true_states[i], prev_true_states[i], 
+                        dones[i], workflow_order, 
+                        ref_compliant=compliant_actions[i],
+                        ref_total=total_fix_actions[i]
                     )
                     
-                    # Update compliance tracking
-                    if self._is_fix_action(action):
-                        total_fix_actions += 1
+                    if self._is_fix_action(actions[i]):
+                        total_fix_actions[i] += 1
                         if self._is_compliant_with_workflow(
-                            action, true_state_after, true_state_before, workflow_order
+                            actions[i], new_true_states[i], prev_true_states[i], workflow_order
                         ):
-                            compliant_actions += 1
+                            compliant_actions[i] += 1
                 
-                total_reward = env_reward + alignment_reward
+                total_reward = env_rewards[i] + alignment_reward
                 
                 # Store transition
-                episode_states.append(augmented_state.cpu().squeeze().numpy())
-                episode_actions.append(action)
-                episode_env_rewards.append(env_reward)
-                episode_dones.append(done)
-                episode_log_probs.append(log_prob.cpu().item())
-                episode_values.append(value.cpu().item())
+                all_states.append(augmented_states[i].cpu().numpy())
+                all_actions.append(actions[i])
+                all_env_rewards.append(env_rewards[i])
+                all_dones.append(dones[i])
+                all_log_probs.append(log_probs[i].cpu().item())
+                all_values.append(values[i].cpu().item())
                 
-                prev_true_state = true_state_after
-                state = next_state
+                current_episode_rewards[i] += env_rewards[i]
+                current_episode_steps[i] += 1
+                total_transitions += 1
                 
-                if done:
-                    break
+                # Check if episode ended
+                if dones[i]:
+                    episode_counts[i] += 1
+                    compliance = compliant_actions[i] / max(total_fix_actions[i], 1)
+                    all_compliances.append(compliance)
+                    all_fix_counts.append(total_fix_actions[i])
+                    
+                    # Reset episode tracking for this environment
+                    current_episode_rewards[i] = 0
+                    current_episode_steps[i] = 0
+                    compliant_actions[i] = 0
+                    total_fix_actions[i] = 0
+                    prev_true_states[i] = None
+                else:
+                    prev_true_states[i] = new_true_states[i]
             
-            # Episode complete!
-            all_states.extend(episode_states)
-            all_actions.extend(episode_actions)
-            all_env_rewards.extend(episode_env_rewards)
-            all_dones.extend(episode_dones)
-            all_log_probs.extend(episode_log_probs)
-            all_values.extend(episode_values)
-            
-            compliance = compliant_actions / max(total_fix_actions, 1)
-            all_compliances.append(compliance)
-            all_fix_counts.append(total_fix_actions)
-            
-            episodes_collected += 1
-            
-            # Move to next environment
-            env_idx = (env_idx + 1) % self.n_envs
-            
-            if episodes_collected % 10 == 0:
+            # Print progress
+            total_episodes = np.sum(episode_counts)
+            if total_episodes % 10 == 0 and total_episodes > 0:
                 elapsed = time.time() - start_time
-                rate = episodes_collected / elapsed
-                print(f"  {episodes_collected}/{n_episodes} episodes ({rate:.1f} eps/sec)")
+                rate = total_episodes / elapsed
+                print(f"  {total_episodes}/{n_episodes} episodes ({rate:.1f} eps/sec)")
+        
+        # Clean up
+        envs.close()
         
         elapsed = time.time() - start_time
-        rate = episodes_collected / elapsed
-        print(f"✅ Collected {episodes_collected} episodes in {elapsed:.1f}s ({rate:.1f} eps/sec)\n")
+        total_episodes = np.sum(episode_counts)
+        rate = total_episodes / elapsed
+        print(f"✅ Collected {total_episodes} episodes in {elapsed:.1f}s ({rate:.1f} eps/sec)")
+        print(f"   Total transitions: {total_transitions}")
+        print(f"   Using {self.n_envs} parallel workers\n")
         
         return (np.array(all_states), np.array(all_actions), np.array(all_env_rewards),
                 np.array(all_dones), np.array(all_log_probs), np.array(all_values),
