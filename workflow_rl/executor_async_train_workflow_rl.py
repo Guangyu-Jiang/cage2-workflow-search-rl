@@ -210,8 +210,9 @@ class ExecutorAsyncWorkflowRLTrainer:
         self.workflow_manager = OrderBasedWorkflow()
         self.gp_search = GPUCBOrderSearch(beta=2.0)
         
-        # Shared agent
-        self.shared_agent = None
+        # Store trained policies per workflow (key: workflow tuple)
+        # Only inherit if training the SAME workflow again!
+        self.workflow_policies = {}  # {workflow_tuple: agent}
         
         # Initialize logging
         self._init_logging()
@@ -337,14 +338,20 @@ class ExecutorAsyncWorkflowRLTrainer:
         print(f"Using {self.n_workers} async workers (ProcessPoolExecutor)")
         print(f"{'='*60}")
         
-        # Create or inherit agent
-        if self.shared_agent is None:
-            print("  Creating new agent (first workflow)")
-            cyborg = CybORG(self.scenario_path, 'sim', agents={'Red': self.red_agent_type})
-            env = ChallengeWrapper2(env=cyborg, agent_name='Blue')
-            obs_dim = env.observation_space.shape[0]
-            
-            from workflow_rl.parallel_order_conditioned_ppo import ParallelOrderConditionedPPO, device
+        # Check if this specific workflow has been trained before
+        workflow_key = tuple(workflow_order)
+        
+        # Get observation dimensions
+        cyborg = CybORG(self.scenario_path, 'sim', agents={'Red': self.red_agent_type})
+        env = ChallengeWrapper2(env=cyborg, agent_name='Blue')
+        obs_dim = env.observation_space.shape[0]
+        
+        from workflow_rl.parallel_order_conditioned_ppo import ParallelOrderConditionedPPO, device
+        
+        if workflow_key in self.workflow_policies:
+            # This EXACT workflow was trained before - inherit its policy!
+            print(f"  Inheriting policy from previous training of THIS workflow")
+            print(f"  (Resuming from checkpoint for this specific workflow)")
             
             agent = ParallelOrderConditionedPPO(
                 input_dims=obs_dim,
@@ -352,29 +359,30 @@ class ExecutorAsyncWorkflowRLTrainer:
                 workflow_order=workflow_order,
                 workflow_manager=self.workflow_manager,
                 alignment_lambda=self.alignment_lambda,
-                K_epochs=4,
+                K_epochs=6,
                 eps_clip=0.2,
                 gamma=0.99,
                 lr=0.002
             )
+            # Load weights from THIS workflow's previous training
+            agent.policy.load_state_dict(self.workflow_policies[workflow_key].policy.state_dict())
+            agent.policy_old.load_state_dict(self.workflow_policies[workflow_key].policy_old.state_dict())
+            
         else:
-            print("  Inheriting policy from previous workflow")
-            from workflow_rl.parallel_order_conditioned_ppo import ParallelOrderConditionedPPO, device
+            # New workflow - train from scratch!
+            print(f"  Creating new agent (new workflow - training from scratch)")
             
-            obs_dim = self.shared_agent.input_dims
             agent = ParallelOrderConditionedPPO(
                 input_dims=obs_dim,
                 n_envs=self.n_workers,
                 workflow_order=workflow_order,
                 workflow_manager=self.workflow_manager,
                 alignment_lambda=self.alignment_lambda,
-                K_epochs=4,
+                K_epochs=6,
                 eps_clip=0.2,
                 gamma=0.99,
                 lr=0.002
             )
-            agent.policy.load_state_dict(self.shared_agent.policy.state_dict())
-            agent.policy_old.load_state_dict(self.shared_agent.policy_old.state_dict())
         
         # Training loop
         total_episodes = 0
@@ -484,11 +492,12 @@ class ExecutorAsyncWorkflowRLTrainer:
                 print(f"    Latest compliance: {avg_compliance:.2%}")
                 break
         
-        # Save agent
-        self.shared_agent = agent
+        # Save agent for THIS specific workflow
+        self.workflow_policies[workflow_key] = agent
         checkpoint_path = os.path.join(self.checkpoint_dir, f'workflow_{workflow_id}_agent.pt')
         torch.save(agent.policy.state_dict(), checkpoint_path)
-        print(f"💾 Saved checkpoint: {checkpoint_path}\n")
+        print(f"💾 Saved checkpoint for this workflow: {checkpoint_path}")
+        print(f"   Policy stored for workflow: {' → '.join(workflow_order)}\n")
         
         return np.mean(rewards), avg_compliance, total_episodes
     
@@ -576,6 +585,10 @@ class ExecutorAsyncWorkflowRLTrainer:
         
         print("\n" + "="*60)
         print("✅ Training Complete!")
+        print(f"   Total workflows explored: {iteration}")
+        print(f"   Unique workflows trained: {len(self.workflow_policies)}")
+        print(f"   Workflows trained from scratch: {len(self.workflow_policies)}")
+        print(f"   Workflow re-visits: {iteration - len(self.workflow_policies)}")
         print("="*60)
         
         self.log_file.close()
@@ -592,7 +605,7 @@ def main():
     parser = argparse.ArgumentParser(description='ProcessPoolExecutor Async Workflow RL Training')
     parser.add_argument('--n-workers', type=int, default=100)
     parser.add_argument('--total-episodes', type=int, default=100000)
-    parser.add_argument('--max-episodes-per-workflow', type=int, default=5000)
+    parser.add_argument('--max-episodes-per-workflow', type=int, default=10000)
     parser.add_argument('--episodes-per-update', type=int, default=100)
     parser.add_argument('--red-agent', type=str, default='B_lineAgent')
     parser.add_argument('--alignment-lambda', type=float, default=30.0)
