@@ -1,156 +1,201 @@
-# 🔄 Policy Inheritance Across Workflows
+# 🔄 Workflow-Specific Policy Storage
 
-## Yes, We Keep the Old Policy!
+## Policy is Saved Per Workflow!
 
-When training a new workflow, the system **inherits the neural network weights** from the previous workflow. This is a key feature for faster learning!
+The system now stores a **separate policy for each unique workflow**. When you train the same workflow again, it inherits from that workflow's previous policy. **New workflows train from scratch.**
 
 ---
 
 ## 📝 How It Works
 
-### **First Workflow (Iteration 1):**
+### **First Time Training a Workflow:**
 ```python
-if self.shared_agent is None:
-    print("  Creating new agent (first workflow)")
+workflow_key = tuple(workflow_order)
+
+if workflow_key in self.workflow_policies:
+    # This workflow was trained before
+    pass
+else:
+    # NEW workflow - train from scratch!
+    print("  Creating new agent (new workflow - training from scratch)")
     agent = ParallelOrderConditionedPPO(...)
-    # ← Train from scratch (random initialization)
 ```
 
 **Output:**
 ```
 Iteration 1
   Selected: user → op_host → op_server → enterprise → defender
-  Creating new agent (first workflow)
+  Creating new agent (new workflow - training from scratch)
 ```
 
-### **Second Workflow (Iteration 2):**
+### **Revisiting the Same Workflow:**
 ```python
-else:
-    print("  Inheriting policy from previous workflow")
+if workflow_key in self.workflow_policies:
+    # This EXACT workflow was trained before!
+    print("  Inheriting policy from previous training of THIS workflow")
     agent = ParallelOrderConditionedPPO(...)
     
-    # ← KEY: Load weights from previous workflow!
-    agent.policy.load_state_dict(self.shared_agent.policy.state_dict())
-    agent.policy_old.load_state_dict(self.shared_agent.policy_old.state_dict())
+    # Load weights from THIS workflow's previous training
+    agent.policy.load_state_dict(self.workflow_policies[workflow_key].policy.state_dict())
 ```
 
 **Output:**
 ```
-Iteration 2
-  Selected: defender → enterprise → op_server → op_host → user
-  Inheriting policy from previous workflow
+Iteration 15
+  Selected: user → op_host → op_server → enterprise → defender  (same as Iteration 1!)
+  Inheriting policy from previous training of THIS workflow
+  (Resuming from checkpoint for this specific workflow)
 ```
 
-### **After Each Workflow:**
+### **After Training:**
 ```python
-# Save the trained agent for next workflow to inherit
-self.shared_agent = agent
+# Save agent for THIS specific workflow
+workflow_key = tuple(workflow_order)
+self.workflow_policies[workflow_key] = agent
 ```
 
 ---
 
-## 🎯 Visual Flow
+## 🎯 Visual Flow (New Behavior)
 
 ```
-Iteration 1: user → op_host → op_server → enterprise → defender
+Iteration 1: Workflow A (user → op_host → op_server → enterprise → defender)
 ┌──────────────────┐
 │ New Agent        │
 │ (Random Init)    │
 └────────┬─────────┘
-         │ Train 100 episodes
+         │ Train from scratch
          ▼
     ┌────────────┐
-    │ Trained    │
-    │ Policy #1  │
+    │ Policy_A   │
     └─────┬──────┘
           │
-          │ Save as shared_agent
+          │ Save in workflow_policies[A]
           ▼
-Iteration 2: defender → enterprise → op_server → op_host → user
+          
+Iteration 2: Workflow B (defender → enterprise → op_server → op_host → user)
 ┌──────────────────┐
 │ New Agent        │
-│ (Inherit from #1)│←── Load weights from Policy #1
+│ (Random Init)    │  ← NEW workflow, train from scratch!
 └────────┬─────────┘
-         │ Train 100 episodes
+         │ Train from scratch
          ▼
     ┌────────────┐
-    │ Trained    │
-    │ Policy #2  │
+    │ Policy_B   │
     └─────┬──────┘
           │
-          │ Save as shared_agent
+          │ Save in workflow_policies[B]
           ▼
-Iteration 3: op_server → defender → enterprise → op_host → user
+          
+Iteration 3: Workflow A (user → op_host → op_server → enterprise → defender)
+┌──────────────────┐
+│ Load from        │
+│ Policy_A         │←── Same as Iteration 1! Inherit from Policy_A
+└────────┬─────────┘
+         │ Resume training (fine-tune)
+         ▼
+    ┌────────────┐
+    │ Policy_A   │
+    │ (updated)  │
+    └─────┬──────┘
+          │
+          │ Update workflow_policies[A]
+          ▼
+
+Iteration 4: Workflow C (op_server → defender → ...)
 ┌──────────────────┐
 │ New Agent        │
-│ (Inherit from #2)│←── Load weights from Policy #2
+│ (Random Init)    │  ← NEW workflow again!
 └────────┬─────────┘
-         │ Train 100 episodes
+         │ Train from scratch
          ▼
-    ...and so on
+    ┌────────────┐
+    │ Policy_C   │
+    └─────┬──────┘
+          │
+          │ Save in workflow_policies[C]
+          ▼
 ```
 
 ---
 
-## 💡 Why This is Powerful
+## 💡 Why Workflow-Specific Storage is Better
 
-### **Benefits of Policy Inheritance:**
+### **Benefits of This Approach:**
 
-1. **Faster Convergence** (5-10x speedup)
-   - First workflow: ~300-500 episodes to reach 95% compliance
-   - Subsequent workflows: ~50-100 episodes to reach 95% compliance
-   - Agent already knows general defense strategies!
+1. **Accurate Policy Per Workflow**
+   - Each workflow gets its own optimized policy
+   - No contamination from other workflows
+   - True performance measurement per workflow
 
-2. **Knowledge Transfer**
-   - Learns "fix compromised hosts" once
-   - Learns "analyze network state" once
-   - Only needs to learn "which order" for new workflow
+2. **Resume Capability**
+   - If GP-UCB re-selects a workflow, resume from where you left off
+   - Allows incremental improvement of promising workflows
+   - Can train workflows to higher compliance over time
 
-3. **Efficient Exploration**
-   - GP-UCB can try more workflows with same episode budget
-   - Each workflow uses fewer episodes
-   - Better coverage of workflow space
+3. **Fair GP-UCB Evaluation**
+   - Each workflow evaluated on its OWN merits
+   - Not biased by previous workflow's learning
+   - GP learns true workflow quality, not transfer effects
 
-### **Example from Your Logs:**
+4. **Clear Semantics**
+   - "New workflow" = train from scratch
+   - "Same workflow" = resume previous training
+   - Easy to understand and debug
 
-Looking at a typical training run:
+### **Example Scenarios:**
 
+**Scenario 1: All New Workflows**
 ```
-Iteration 1 (first workflow):
-  Episodes: 400 (needs more training)
-  Compliance: 82.50%
-  
-Iteration 2 (inheriting):
-  Episodes: 100 (much faster!)
-  Compliance: 85.95%
-  
-Iteration 3 (inheriting):
-  Episodes: 50 (even faster!)
-  Compliance: 95.00% ✓
+Iteration 1: Workflow A → Train from scratch (300 episodes to 95%)
+Iteration 2: Workflow B → Train from scratch (300 episodes to 95%)
+Iteration 3: Workflow C → Train from scratch (300 episodes to 95%)
+...
+Total: Each workflow gets fair evaluation from scratch
+```
+
+**Scenario 2: GP Re-selects a Promising Workflow**
+```
+Iteration 1: Workflow A → Train from scratch (300 episodes, 85% compliance)
+Iteration 2: Workflow B → Train from scratch (300 episodes, 90% compliance)
+Iteration 3: Workflow B → Inherit from Iteration 2! (50 episodes, 95% compliance ✓)
+                         └─ GP found B is good, continues training it!
+```
+
+**Scenario 3: Mix of New and Revisited**
+```
+Iteration 1: Workflow A → New (300 eps, 88% compliance)
+Iteration 2: Workflow B → New (300 eps, 92% compliance)  
+Iteration 3: Workflow C → New (300 eps, 85% compliance)
+Iteration 4: Workflow B → Resume (50 eps, 95% ✓) ← GP focuses on best
+Iteration 5: Workflow D → New (300 eps, 75% compliance)
+Iteration 6: Workflow B → Resume (0 eps, 95% ✓) ← Already achieved!
 ```
 
 ---
 
 ## 🔧 Technical Details
 
-### **What Gets Inherited:**
+### **What Gets Inherited (When Revisiting Same Workflow):**
 
 ```python
-# Neural network weights
-agent.policy.load_state_dict(self.shared_agent.policy.state_dict())
+workflow_key = tuple(workflow_order)
 
-# Old policy weights (for PPO)
-agent.policy_old.load_state_dict(self.shared_agent.policy_old.state_dict())
+if workflow_key in self.workflow_policies:
+    # Load THIS workflow's previous policy
+    agent.policy.load_state_dict(self.workflow_policies[workflow_key].policy.state_dict())
+    agent.policy_old.load_state_dict(self.workflow_policies[workflow_key].policy_old.state_dict())
 ```
 
-**Inherited:**
-- ✅ Actor network weights (policy)
-- ✅ Critic network weights (value function)
-- ✅ All learned parameters
+**Inherited (when revisiting):**
+- ✅ Actor network weights for THIS workflow
+- ✅ Critic network weights for THIS workflow
+- ✅ All learned parameters from THIS workflow's previous training
 
 **NOT Inherited:**
-- ❌ Optimizer state (reset for new workflow)
-- ❌ Compliance tracking counters (reset)
+- ❌ Policies from OTHER workflows (each workflow independent!)
+- ❌ Optimizer state (reset each time)
+- ❌ Compliance counters (reset)
 - ❌ Episode buffers (cleared)
 
 ### **The Policy Network Structure:**
@@ -166,60 +211,82 @@ Input: [State (52 dims) + Workflow Encoding (25 dims)] = 77 dims
  Actions   Value
 ```
 
-The workflow encoding changes, but the network **already learned**:
-- How to process state information
-- Which actions are useful
-- How to estimate value
-- General defense patterns
-
-It just fine-tunes for the new workflow priority order!
+**Key Point:** The workflow encoding is PART of the input, so:
+- Different workflows → Different inputs → Different optimal policies
+- Each workflow should have its own policy
+- No reason to inherit from a different workflow!
 
 ---
 
-## 🎓 Example Training Progression
+## 🎓 Example Training Progression (New Behavior)
 
-### Workflow 1: `user → op_host → op_server → enterprise → defender`
+### First Training of Workflow A: `user → op_host → op_server → enterprise → defender`
 ```
-Update 1:  Compliance: 70.39% (learning from scratch)
-Update 2:  Compliance: 79.55% (improving)
-Update 3:  Compliance: 76.69%
-Update 4:  Compliance: 80.06%
-...
-Update 15: Compliance: 88.62%
-Update 16: Compliance: 95.00% ✓ (achieved after 400 episodes)
-```
-
-### Workflow 2: `defender → enterprise → op_server → op_host → user`
-```
-Update 1:  Compliance: 85.00% (starts much higher! inherited knowledge)
-Update 2:  Compliance: 92.00% (faster improvement)
-Update 3:  Compliance: 95.50% ✓ (achieved after only 75 episodes!)
+Iteration 1:
+  Creating new agent (new workflow - training from scratch)
+  
+  Update 1:  Compliance: 56.33% (learning from scratch)
+  Update 2:  Compliance: 60.13% (improving)
+  Update 3:  Compliance: 68.50%
+  Update 4:  Compliance: 75.00%
+  ...
+  Update 10: Compliance: 95.00% ✓ (achieved after 250 episodes)
+  
+  Policy saved in workflow_policies[('user', 'op_host', ...)]
 ```
 
-**10x faster convergence!**
+### First Training of Workflow B: `defender → enterprise → op_server → op_host → user`
+```
+Iteration 2:
+  Creating new agent (new workflow - training from scratch)
+  
+  Update 1:  Compliance: 58.00% (learning from scratch - independent of Workflow A!)
+  Update 2:  Compliance: 65.00%
+  ...
+  Update 8:  Compliance: 95.50% ✓ (achieved after 200 episodes)
+  
+  Policy saved in workflow_policies[('defender', 'enterprise', ...)]
+```
+
+### Re-visiting Workflow A (GP found it promising!)
+```
+Iteration 5:
+  Inheriting policy from previous training of THIS workflow
+  (Resuming from checkpoint for this specific workflow)
+  
+  Update 1:  Compliance: 95.00% (already achieved!) ✓
+  
+  No more training needed - already compliant!
+```
 
 ---
 
-## 🔬 What if You DON'T Want Policy Inheritance?
+## 🔬 What if You Want to Disable Resume Capability?
 
-If you want each workflow to train from scratch (not recommended), you could modify:
+If you want to ALWAYS train from scratch (even when revisiting workflows):
 
 ```python
 # In train_workflow_async():
-if self.shared_agent is None:
-    # Create new agent
-else:
-    # Instead of inheriting:
-    # agent.policy.load_state_dict(self.shared_agent.policy.state_dict())
-    
-    # Don't load weights - train from scratch
-    pass
+workflow_key = tuple(workflow_order)
+
+# Comment out the inheritance check:
+# if workflow_key in self.workflow_policies:
+#     agent.policy.load_state_dict(...)
+
+# Always create new agent
+agent = ParallelOrderConditionedPPO(...)
 ```
 
-But this would:
-- ❌ Make training much slower
-- ❌ Waste the episode budget
-- ❌ Reduce workflow exploration
+**Effect:**
+- Every iteration trains from scratch
+- No resume capability
+- Each workflow visit is independent
+- Useful for testing if GP-UCB re-selection helps
+
+**Current Behavior (Recommended):**
+- New workflows: Train from scratch ✅
+- Revisited workflows: Resume from previous training ✅
+- Best of both worlds!
 
 ---
 
@@ -227,64 +294,92 @@ But this would:
 
 With 100,000 episode budget:
 
-### **With Policy Inheritance (current):**
+### **Current Behavior (Workflow-Specific Storage):**
 ```
-Workflow 1: 400 episodes → 95% compliance
-Workflow 2: 75 episodes → 95% compliance  
-Workflow 3: 50 episodes → 95% compliance
-...
-Workflow 200: 50 episodes → 95% compliance
-
-Total workflows explored: ~200
-```
-
-### **Without Policy Inheritance:**
-```
-Workflow 1: 400 episodes → 95% compliance
-Workflow 2: 400 episodes → 95% compliance (no help from #1)
-Workflow 3: 400 episodes → 95% compliance (no help from #2)
+Iteration 1: Workflow A → 250 episodes → 95% compliance
+Iteration 2: Workflow B → 300 episodes → 95% compliance
+Iteration 3: Workflow C → 280 episodes → 95% compliance
+Iteration 4: Workflow B → 0 episodes → 95% compliance (resume, already compliant!)
+Iteration 5: Workflow D → 270 episodes → 95% compliance
 ...
 
-Total workflows explored: ~250
-
-But each takes much longer - less efficient!
+Unique workflows trained: ~300-350
+Workflow re-visits: Minimal episodes (already trained)
+Total coverage: Good exploration of search space
 ```
+
+### **Advantages:**
+
+1. **Fair Evaluation**
+   - Each workflow measured on its own performance
+   - No transfer effects confounding GP-UCB
+   
+2. **Efficient Re-selection**
+   - If GP picks a good workflow again, resume instantly
+   - No wasted episodes re-training compliant workflows
+
+3. **Clean Workflow Comparison**
+   - Can directly compare workflow rewards
+   - Each trained independently
+   - True workflow quality discovered
 
 ---
 
 ## ✅ Summary
 
-**Yes, we keep the old policy!** This is a feature, not a bug:
+**Each workflow gets its own policy!** The system now works as follows:
 
-1. **First workflow**: Train from scratch
-2. **All subsequent workflows**: Inherit previous policy weights
-3. **Result**: Much faster convergence (5-10x)
-4. **Benefit**: Explore more workflows with same episode budget
+1. **New workflow**: Train from scratch (no inheritance from other workflows)
+2. **Same workflow revisited**: Resume from that workflow's previous checkpoint
+3. **Result**: Fair evaluation of each workflow + efficient re-selection
+4. **Benefit**: True workflow quality measured, no cross-workflow contamination
 
-This is called **transfer learning** and is one of the key innovations making the workflow search efficient!
+**Key Data Structure:**
+```python
+workflow_policies = {
+    ('user', 'op_host', 'op_server', 'enterprise', 'defender'): Policy_A,
+    ('defender', 'enterprise', 'op_server', 'op_host', 'user'): Policy_B,
+    ('op_server', 'defender', 'enterprise', 'user', 'op_host'): Policy_C,
+    ...
+}
+```
+
+This is the **correct approach** for workflow search - each workflow evaluated independently!
 
 ---
 
 ## 🎯 Key Code Locations
 
-### Executor Async (line 341-377):
+### Executor Async (lines 341-385):
 ```python
-if self.shared_agent is None:
-    print("  Creating new agent (first workflow)")
+# Check if THIS specific workflow was trained before
+workflow_key = tuple(workflow_order)
+
+if workflow_key in self.workflow_policies:
+    # Resume from THIS workflow's checkpoint
+    print("  Inheriting policy from previous training of THIS workflow")
     agent = ParallelOrderConditionedPPO(...)
+    agent.policy.load_state_dict(self.workflow_policies[workflow_key].policy.state_dict())
 else:
-    print("  Inheriting policy from previous workflow")
+    # New workflow - train from scratch
+    print("  Creating new agent (new workflow - training from scratch)")
     agent = ParallelOrderConditionedPPO(...)
-    agent.policy.load_state_dict(self.shared_agent.policy.state_dict())  # ← Inheritance!
-    agent.policy_old.load_state_dict(self.shared_agent.policy_old.state_dict())
 ```
 
-### After training (line 488):
+### After training (line 496):
 ```python
-self.shared_agent = agent  # ← Save for next workflow to inherit
+# Save agent for THIS specific workflow
+workflow_key = tuple(workflow_order)
+self.workflow_policies[workflow_key] = agent  # ← Store per workflow!
 ```
 
-The same pattern is used in:
-- `executor_async_train_workflow_rl.py` (async version)
-- `parallel_train_workflow_rl.py` (synchronous version)
-- Both use policy inheritance for efficiency!
+### Storage Structure (line 215):
+```python
+# Dictionary mapping workflow to its trained policy
+self.workflow_policies = {}  # {workflow_tuple: agent}
+```
+
+This pattern provides:
+- ✅ Workflow-specific policies
+- ✅ Resume capability for promising workflows
+- ✅ Fair evaluation (no cross-workflow contamination)
