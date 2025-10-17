@@ -28,6 +28,7 @@ from workflow_rl.gp_ucb_order_search import GPUCBOrderSearch
 
 def collect_single_episode(worker_id: int, scenario_path: str, red_agent_type,
                            policy_weights_cpu: Dict, workflow_encoding: np.ndarray,
+                           workflow_order: List[str], alignment_lambda: float = 30.0,
                            max_steps: int = 100):
     """
     Worker function that collects ONE complete episode.
@@ -38,6 +39,18 @@ def collect_single_episode(worker_id: int, scenario_path: str, red_agent_type,
     # Create environment in worker process
     cyborg = CybORG(scenario_path, 'sim', agents={'Red': red_agent_type})
     env = ChallengeWrapper2(env=cyborg, agent_name='Blue')
+    
+    # Unit priorities for workflow compliance
+    unit_priorities = {
+        'defender': 5,
+        'enterprise': 4,
+        'op_server': 3,
+        'op_host': 2,
+        'user': 1
+    }
+    
+    # Build priority map from workflow order
+    workflow_priorities = {unit: priority for priority, unit in enumerate(reversed(workflow_order), 1)}
     
     # Reconstruct policy from weights (on CPU)
     import torch
@@ -61,6 +74,11 @@ def collect_single_episode(worker_id: int, scenario_path: str, red_agent_type,
     episode_log_probs = []
     episode_values = []
     
+    # Compliance tracking
+    total_fix_actions = 0
+    compliant_fix_actions = 0
+    prev_true_state = None
+    
     state = env.reset()
     total_reward = 0
     steps = 0
@@ -81,8 +99,82 @@ def collect_single_episode(worker_id: int, scenario_path: str, red_agent_type,
         
         action = action_tensor.item()
         
+        # Get true state before action
+        true_state_before = cyborg.get_agent_state('True')
+        
         # Execute
         next_state, reward, done, info = env.step(action)
+        
+        # Get true state after action
+        true_state_after = cyborg.get_agent_state('True')
+        
+        # Track compliance for fix actions (action IDs 132-144 are Restore actions)
+        if 132 <= action <= 144:
+            total_fix_actions += 1
+            
+            # Check if this fix follows workflow priority
+            if prev_true_state is not None:
+                # Identify which host was fixed
+                fixed_hosts = []
+                for hostname in true_state_before.keys():
+                    if hostname != 'success':
+                        host_before = true_state_before.get(hostname, {})
+                        host_after = true_state_after.get(hostname, {})
+                        
+                        # Check if host went from compromised to clean
+                        was_compromised = (
+                            host_before.get('System info', {}).get('Compromised', False) or
+                            (host_before.get('Interface', [{}])[0].get('Compromised', False) 
+                             if host_before.get('Interface') else False)
+                        )
+                        is_clean = not (
+                            host_after.get('System info', {}).get('Compromised', False) or
+                            (host_after.get('Interface', [{}])[0].get('Compromised', False)
+                             if host_after.get('Interface') else False)
+                        )
+                        
+                        if was_compromised and is_clean:
+                            fixed_hosts.append(hostname)
+                
+                # Check if fix follows workflow priority
+                if fixed_hosts:
+                    for fixed_host in fixed_hosts:
+                        # Determine unit type of fixed host
+                        fixed_unit_type = None
+                        for unit_type in workflow_priorities.keys():
+                            if unit_type in fixed_host.lower():
+                                fixed_unit_type = unit_type
+                                break
+                        
+                        if fixed_unit_type:
+                            # Check if there are higher priority hosts still compromised
+                            is_compliant = True
+                            fixed_priority = workflow_priorities[fixed_unit_type]
+                            
+                            for hostname in true_state_after.keys():
+                                if hostname != 'success':
+                                    host_info = true_state_after.get(hostname, {})
+                                    is_compromised = (
+                                        host_info.get('System info', {}).get('Compromised', False) or
+                                        (host_info.get('Interface', [{}])[0].get('Compromised', False)
+                                         if host_info.get('Interface') else False)
+                                    )
+                                    
+                                    if is_compromised:
+                                        # Check if this compromised host has higher priority
+                                        for unit_type in workflow_priorities.keys():
+                                            if unit_type in hostname.lower():
+                                                if workflow_priorities[unit_type] > fixed_priority:
+                                                    is_compliant = False
+                                                    break
+                                        if not is_compliant:
+                                            break
+                            
+                            if is_compliant:
+                                compliant_fix_actions += 1
+                                break  # Count fix as compliant
+        
+        prev_true_state = true_state_after
         
         # Store
         episode_states.append(augmented_state.squeeze().numpy())
@@ -99,6 +191,9 @@ def collect_single_episode(worker_id: int, scenario_path: str, red_agent_type,
         if done:
             break
     
+    # Compute episode compliance
+    episode_compliance = compliant_fix_actions / max(total_fix_actions, 1)
+    
     return {
         'worker_id': worker_id,
         'states': episode_states,
@@ -108,7 +203,10 @@ def collect_single_episode(worker_id: int, scenario_path: str, red_agent_type,
         'log_probs': episode_log_probs,
         'values': episode_values,
         'total_reward': total_reward,
-        'steps': steps
+        'steps': steps,
+        'compliance': episode_compliance,
+        'total_fix_actions': total_fix_actions,
+        'compliant_fix_actions': compliant_fix_actions
     }
 
 
@@ -213,6 +311,8 @@ class ExecutorAsyncWorkflowRLTrainer:
                 red_agent_type=self.red_agent_type,
                 policy_weights_cpu=policy_weights_cpu,
                 workflow_encoding=workflow_encoding,
+                workflow_order=workflow_order,
+                alignment_lambda=self.alignment_lambda,
                 max_steps=100
             )
             futures.append(future)
@@ -250,6 +350,7 @@ class ExecutorAsyncWorkflowRLTrainer:
         all_dones = []
         all_log_probs = []
         all_values = []
+        compliances = []
         
         for episode in completed_episodes:
             all_states.extend(episode['states'])
@@ -258,9 +359,7 @@ class ExecutorAsyncWorkflowRLTrainer:
             all_dones.extend(episode['dones'])
             all_log_probs.extend(episode['log_probs'])
             all_values.extend(episode['values'])
-        
-        # Compute compliance (simplified - placeholder)
-        compliances = [1.0] * len(completed_episodes)
+            compliances.append(episode['compliance'])
         
         return (np.array(all_states), np.array(all_actions), np.array(all_rewards),
                 np.array(all_dones), np.array(all_log_probs), np.array(all_values),
