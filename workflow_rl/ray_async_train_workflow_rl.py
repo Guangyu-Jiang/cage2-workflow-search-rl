@@ -220,7 +220,9 @@ class RayAsyncWorkflowRLTrainer:
         Workers run INDEPENDENTLY - no synchronization!
         """
         workflow_encoding = self.workflow_manager.order_to_onehot(workflow_order)
-        policy_weights = agent.policy_old.state_dict()
+        
+        # Move policy weights to CPU for Ray workers (they don't have GPU)
+        policy_weights = {k: v.cpu() for k, v in agent.policy_old.state_dict().items()}
         
         print(f"📦 Collecting {n_episodes} episodes from {self.n_workers} Ray workers...")
         print(f"   Workers run INDEPENDENTLY (true async!)")
