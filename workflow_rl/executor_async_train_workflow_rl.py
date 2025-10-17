@@ -227,8 +227,9 @@ class ExecutorAsyncWorkflowRLTrainer:
         self.log_file = open(log_filename, 'w', newline='')
         self.csv_writer = csv.writer(self.log_file)
         self.csv_writer.writerow([
-            'Workflow_ID', 'Workflow_Order', 'Update', 'Episodes', 
-            'Avg_Reward', 'Compliance', 'Collection_Time', 'Update_Time'
+            'Workflow_ID', 'Workflow_Order', 'Update', 'Episodes',
+            'Env_Reward', 'Alignment_Bonus', 'Total_Reward', 'Compliance',
+            'Avg_Fixes', 'Collection_Time', 'Update_Time'
         ])
         self.log_file.flush()
         print(f"Experiment directory: {self.checkpoint_dir}")
@@ -463,10 +464,16 @@ class ExecutorAsyncWorkflowRLTrainer:
             print(f"    ⏱️ Timing: Sampling={collection_time:.2f}s, Update={update_time:.2f}s")
             print(f"    📊 Average: Sampling={avg_sampling_time:.2f}s, Update={avg_update_time:.2f}s (PPO takes {update_ratio:.1f}% of time)")
             
-            # Log
+            # Log - separate environment reward, alignment bonus, and total reward
             self.csv_writer.writerow([
                 workflow_id, ' → '.join(workflow_order), update_num, total_episodes,
-                avg_env_reward, avg_compliance, collection_time, update_time
+                f"{avg_env_reward:.2f}",           # Original environment reward
+                f"{alignment_bonus:.2f}",          # Compliance/alignment reward
+                f"{total_reward:.2f}",             # Customized reward (sum)
+                f"{avg_compliance:.4f}",           # Compliance rate
+                f"{avg_fixes:.1f}",                # Average fixes per episode
+                f"{collection_time:.2f}",          # Collection time
+                f"{update_time:.2f}"               # Update time
             ])
             self.log_file.flush()
             
@@ -585,7 +592,7 @@ def main():
     parser = argparse.ArgumentParser(description='ProcessPoolExecutor Async Workflow RL Training')
     parser.add_argument('--n-workers', type=int, default=100)
     parser.add_argument('--total-episodes', type=int, default=100000)
-    parser.add_argument('--max-episodes-per-workflow', type=int, default=500)
+    parser.add_argument('--max-episodes-per-workflow', type=int, default=5000)
     parser.add_argument('--episodes-per-update', type=int, default=100)
     parser.add_argument('--red-agent', type=str, default='B_lineAgent')
     parser.add_argument('--alignment-lambda', type=float, default=30.0)
