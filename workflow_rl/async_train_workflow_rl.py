@@ -462,7 +462,8 @@ class AsyncWorkflowRLTrainer:
             # Get candidate orders
             if iteration <= 5:
                 # Use canonical orders for first few iterations
-                candidate_orders = self.workflow_manager.get_canonical_workflows()
+                canonical_dict = self.workflow_manager.get_canonical_workflows()
+                candidate_orders = list(canonical_dict.values())
             else:
                 # Use random permutations as candidates
                 unit_types = ['defender', 'enterprise', 'op_server', 'op_host', 'user']
