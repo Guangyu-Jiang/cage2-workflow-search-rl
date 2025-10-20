@@ -118,7 +118,6 @@ Iteration 4: Workflow C (op_server → defender → ...)
 ```
 
 ---
-
 ## 💡 Why Workflow-Specific Storage is Better
 
 ### **Benefits of This Approach:**

@@ -625,10 +625,10 @@ class ExecutorAsyncWorkflowRLTrainer:
 
 def main():
     parser = argparse.ArgumentParser(description='ProcessPoolExecutor Async Workflow RL Training')
-    parser.add_argument('--n-workers', type=int, default=25)
-    parser.add_argument('--total-episodes', type=int, default=100000)
-    parser.add_argument('--max-episodes-per-workflow', type=int, default=10000)
-    parser.add_argument('--episodes-per-update', type=int, default=25)
+    parser.add_argument('--n-workers', type=int, default=100)
+    parser.add_argument('--total-episodes', type=int, default=300000)
+    parser.add_argument('--max-episodes-per-workflow', type=int, default=20000)
+    parser.add_argument('--episodes-per-update', type=int, default=100)
     parser.add_argument('--red-agent', type=str, default='B_lineAgent')
     parser.add_argument('--alignment-lambda', type=float, default=30.0)
     parser.add_argument('--compliance-threshold', type=float, default=0.95)
