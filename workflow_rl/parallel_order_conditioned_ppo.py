@@ -23,8 +23,8 @@ class ParallelOrderConditionedPPO:
                  workflow_order: List[str] = None, workflow_manager = None,
                  alignment_lambda: float = 10.0,
                  update_steps: int = 100,
-                 compliant_bonus_scale: float = 0.5,
-                 violation_penalty_scale: float = 1.0):  # Update every 100 steps (full episode) = 2500 transitions with 25 envs
+                 compliant_bonus_scale: float = 0.0,
+                 violation_penalty_scale: float = 0.5):  # Update every 100 steps (full episode) = 2500 transitions with 25 envs
         """
         Initialize parallel PPO agent
         
@@ -221,8 +221,7 @@ class ParallelOrderConditionedPPO:
             
             # If episode ends with no fixes detected, give a small penalty
             if dones is not None and dones[env_idx] and self.env_total_fix_actions[env_idx] == 0:
-                penalty = max(0.5, self.violation_penalty_scale)
-                alignment_rewards[env_idx] -= self.alignment_lambda * penalty
+                alignment_rewards[env_idx] -= self.alignment_lambda * 0.2
         
         return alignment_rewards
     

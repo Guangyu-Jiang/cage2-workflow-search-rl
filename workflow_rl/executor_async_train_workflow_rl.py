@@ -29,8 +29,8 @@ from workflow_rl.gp_ucb_order_search import GPUCBOrderSearch
 def collect_single_episode(worker_id: int, scenario_path: str, red_agent_type,
                            policy_weights_cpu: Dict, workflow_encoding: np.ndarray,
                            workflow_order: List[str], alignment_lambda: float = 30.0,
-                           compliant_bonus_scale: float = 0.5,
-                           violation_penalty_scale: float = 1.0,
+                           compliant_bonus_scale: float = 0.0,
+                           violation_penalty_scale: float = 0.5,
                            max_steps: int = 100):
     """
     Worker function that collects ONE complete episode.
@@ -154,10 +154,10 @@ def collect_single_episode(worker_id: int, scenario_path: str, red_agent_type,
             
             # Check if agent is fixing the highest priority compromised type
             if highest_priority_compromised is None:
-                # No compromised hosts - any fix is acceptable
+                # No compromised hosts - neutral fix
                 compliant_fix_actions += 1
             elif target_type == highest_priority_compromised:
-                # ✅ Fixing the CORRECT (highest priority) compromised type!
+                # ✅ Fixing the highest priority compromised type!
                 compliant_fix_actions += 1
                 step_bonus = alignment_lambda * compliant_bonus_scale
             else:
@@ -175,8 +175,8 @@ def collect_single_episode(worker_id: int, scenario_path: str, red_agent_type,
             alignment_reward += step_bonus
 
         if done and total_fix_actions == 0:
-            # Penalize episodes that never attempted a fix
-            alignment_reward += -alignment_lambda * max(0.5, violation_penalty_scale)
+            # Penalize episodes that never attempted a fix (keep it mild)
+            alignment_reward += -alignment_lambda * 0.2
 
         total_alignment_reward += alignment_reward
         
@@ -237,10 +237,10 @@ class ExecutorAsyncWorkflowRLTrainer:
                  red_agent_type=RedMeanderAgent,
                  alignment_lambda: float = 30.0,
                  compliance_threshold: float = 0.95,
-                 compliant_bonus_scale: float = 0.5,
-                 violation_penalty_scale: float = 1.0,
+                 compliant_bonus_scale: float = 0.0,
+                 violation_penalty_scale: float = 0.5,
                  compliance_focus_weight: float = 75.0,
-                 patience_updates: int = 6):
+                 patience_updates: int = 12):
         
         self.n_workers = n_workers
         self.total_episode_budget = total_episode_budget
