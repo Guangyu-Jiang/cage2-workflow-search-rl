@@ -22,7 +22,9 @@ class ParallelOrderConditionedPPO:
                  gamma: float = 0.99, K_epochs: int = 4, eps_clip: float = 0.2,
                  workflow_order: List[str] = None, workflow_manager = None,
                  alignment_lambda: float = 10.0,
-                 update_steps: int = 100):  # Update every 100 steps (full episode) = 2500 transitions with 25 envs
+                 update_steps: int = 100,
+                 compliant_bonus_scale: float = 0.5,
+                 violation_penalty_scale: float = 1.0):  # Update every 100 steps (full episode) = 2500 transitions with 25 envs
         """
         Initialize parallel PPO agent
         
@@ -41,6 +43,8 @@ class ParallelOrderConditionedPPO:
         self.eps_clip = eps_clip
         self.alignment_lambda = alignment_lambda
         self.update_steps = update_steps
+        self.compliant_bonus_scale = compliant_bonus_scale
+        self.violation_penalty_scale = violation_penalty_scale
         
         # Workflow setup
         self.workflow_order = workflow_order
@@ -173,6 +177,7 @@ class ParallelOrderConditionedPPO:
         for env_idx in range(self.n_envs):
             action = int(actions[env_idx])
             violation = False
+            step_bonus = 0.0
             
             # Only track Remove and Restore actions
             if action in remove_action_range or action in restore_action_range:
@@ -194,6 +199,9 @@ class ParallelOrderConditionedPPO:
                     
                     if not violation:
                         self.env_compliant_actions[env_idx] += 1
+                        step_bonus = self.alignment_lambda * self.compliant_bonus_scale
+                    else:
+                        step_bonus = -self.alignment_lambda * self.violation_penalty_scale
                     
                     # Mark this type as fixed
                     self.env_fixed_types[env_idx].add(target_type)
@@ -209,10 +217,12 @@ class ParallelOrderConditionedPPO:
             # Per-step reward is the delta: λ * (new_rate - old_rate)
             alignment_rewards[env_idx] = current_score - self.env_last_alignment_scores[env_idx]
             self.env_last_alignment_scores[env_idx] = current_score
+            alignment_rewards[env_idx] += step_bonus
             
             # If episode ends with no fixes detected, give a small penalty
             if dones is not None and dones[env_idx] and self.env_total_fix_actions[env_idx] == 0:
-                alignment_rewards[env_idx] -= self.alignment_lambda * 0.5
+                penalty = max(0.5, self.violation_penalty_scale)
+                alignment_rewards[env_idx] -= self.alignment_lambda * penalty
         
         return alignment_rewards
     
@@ -440,4 +450,3 @@ class ParallelOrderConditionedPPO:
             self.order_encoding = torch.FloatTensor(
                 checkpoint['order_encoding']
             ).to(device)
-

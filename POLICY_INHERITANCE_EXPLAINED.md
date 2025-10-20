@@ -2,13 +2,13 @@
 
 ## Policy is Saved Per Workflow!
 
-The system now stores a **separate policy for each unique workflow**. When you train the same workflow again, it inherits from that workflow's previous policy. **New workflows train from scratch.**
+The system stores a **separate policy for each unique workflow**. When you revisit the same workflow, it resumes from that workflow's previous policy. **Brand-new workflows now warm-start from the closest previously trained workflow (by Kendall distance)** so they never lose the defensive knowledge we have already acquired.
 
 ---
 
 ## 📝 How It Works
 
-### **First Time Training a Workflow:**
+### **First Time Training a Workflow (with warm-start):**
 ```python
 workflow_key = tuple(workflow_order)
 
@@ -16,9 +16,14 @@ if workflow_key in self.workflow_policies:
     # This workflow was trained before
     pass
 else:
-    # NEW workflow - train from scratch!
+    # NEW workflow - initialize from nearest neighbour
     print("  Creating new agent (new workflow - training from scratch)")
     agent = ParallelOrderConditionedPPO(...)
+    closest_key, closest_agent, closest_distance = self._find_closest_trained_workflow(workflow_order)
+    if closest_agent is not None:
+        closest_order = ' → '.join(list(closest_key))
+        print(f"  Initializing from closest trained workflow: {closest_order} (dist={closest_distance:.3f})")
+        agent.policy.load_state_dict(closest_agent.policy.state_dict())
 ```
 
 **Output:**
@@ -26,6 +31,7 @@ else:
 Iteration 1
   Selected: user → op_host → op_server → enterprise → defender
   Creating new agent (new workflow - training from scratch)
+  Initializing from closest trained workflow: defender → op_server → enterprise → op_host → user (dist=0.20)
 ```
 
 ### **Revisiting the Same Workflow:**
@@ -76,9 +82,9 @@ Iteration 1: Workflow A (user → op_host → op_server → enterprise → defen
 Iteration 2: Workflow B (defender → enterprise → op_server → op_host → user)
 ┌──────────────────┐
 │ New Agent        │
-│ (Random Init)    │  ← NEW workflow, train from scratch!
+│ (Warm Start)     │  ← NEW workflow, initialized from nearest neighbour!
 └────────┬─────────┘
-         │ Train from scratch
+         │ Fine-tune from inherited weights
          ▼
     ┌────────────┐
     │ Policy_B   │
@@ -105,9 +111,9 @@ Iteration 3: Workflow A (user → op_host → op_server → enterprise → defen
 Iteration 4: Workflow C (op_server → defender → ...)
 ┌──────────────────┐
 │ New Agent        │
-│ (Random Init)    │  ← NEW workflow again!
+│ (Warm Start)     │  ← NEW workflow again!
 └────────┬─────────┘
-         │ Train from scratch
+         │ Fine-tune from inherited weights
          ▼
     ┌────────────┐
     │ Policy_C   │
@@ -147,10 +153,10 @@ Iteration 4: Workflow C (op_server → defender → ...)
 **Scenario 1: All New Workflows**
 ```
 Iteration 1: Workflow A → Train from scratch (300 episodes to 95%)
-Iteration 2: Workflow B → Train from scratch (300 episodes to 95%)
-Iteration 3: Workflow C → Train from scratch (300 episodes to 95%)
+Iteration 2: Workflow B → Warm start from A (220 episodes to 95%)
+Iteration 3: Workflow C → Warm start from the closest prior workflow (250 episodes to 95%)
 ...
-Total: Each workflow gets fair evaluation from scratch
+Total: Each workflow benefits from nearest-neighbour warm starts
 ```
 
 **Scenario 2: GP Re-selects a Promising Workflow**
@@ -164,8 +170,8 @@ Iteration 3: Workflow B → Inherit from Iteration 2! (50 episodes, 95% complian
 **Scenario 3: Mix of New and Revisited**
 ```
 Iteration 1: Workflow A → New (300 eps, 88% compliance)
-Iteration 2: Workflow B → New (300 eps, 92% compliance)  
-Iteration 3: Workflow C → New (300 eps, 85% compliance)
+Iteration 2: Workflow B → New (warm start, 260 eps, 92% compliance)  
+Iteration 3: Workflow C → New (warm start, 240 eps, 85% compliance)
 Iteration 4: Workflow B → Resume (50 eps, 95% ✓) ← GP focuses on best
 Iteration 5: Workflow D → New (300 eps, 75% compliance)
 Iteration 6: Workflow B → Resume (0 eps, 95% ✓) ← Already achieved!
@@ -360,9 +366,15 @@ if workflow_key in self.workflow_policies:
     agent = ParallelOrderConditionedPPO(...)
     agent.policy.load_state_dict(self.workflow_policies[workflow_key].policy.state_dict())
 else:
-    # New workflow - train from scratch
+    # New workflow - create base agent, then warm start from the closest prior workflow (if any)
     print("  Creating new agent (new workflow - training from scratch)")
     agent = ParallelOrderConditionedPPO(...)
+    closest_key, closest_agent, closest_distance = self._find_closest_trained_workflow(workflow_order)
+    if closest_agent is not None:
+        closest_order = ' → '.join(list(closest_key))
+        print(f\"  Initializing from closest trained workflow: {closest_order} (dist={closest_distance:.3f})\")
+        agent.policy.load_state_dict(closest_agent.policy.state_dict())
+        agent.policy_old.load_state_dict(closest_agent.policy_old.state_dict())
 ```
 
 ### After training (line 496):
@@ -381,4 +393,5 @@ self.workflow_policies = {}  # {workflow_tuple: agent}
 This pattern provides:
 - ✅ Workflow-specific policies
 - ✅ Resume capability for promising workflows
+- ✅ Warm starts for unseen workflows (faster compliance ramp-up)
 - ✅ Fair evaluation (no cross-workflow contamination)

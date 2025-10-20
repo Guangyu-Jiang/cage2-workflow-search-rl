@@ -29,6 +29,8 @@ from workflow_rl.gp_ucb_order_search import GPUCBOrderSearch
 def collect_single_episode(worker_id: int, scenario_path: str, red_agent_type,
                            policy_weights_cpu: Dict, workflow_encoding: np.ndarray,
                            workflow_order: List[str], alignment_lambda: float = 30.0,
+                           compliant_bonus_scale: float = 0.5,
+                           violation_penalty_scale: float = 1.0,
                            max_steps: int = 100):
     """
     Worker function that collects ONE complete episode.
@@ -57,7 +59,15 @@ def collect_single_episode(worker_id: int, scenario_path: str, red_agent_type,
     from workflow_rl.order_conditioned_ppo import OrderConditionedActorCritic
     
     obs_dim = env.observation_space.shape[0]
-    action_dim = env.get_action_space('Blue')
+    if obs_dim != 52:
+        raise RuntimeError(f"Unexpected observation dimension ({obs_dim}). Expected 52 to match baseline PPO input.")
+    action_space = env.get_action_space('Blue')
+    if isinstance(action_space, int):
+        action_dim = action_space
+    else:
+        action_dim = len(action_space)
+    if action_dim != 145:
+        raise RuntimeError(f"Unexpected action dimension ({action_dim}). Expected 145 (full action space).")
     
     device_local = torch.device('cpu')  # Workers use CPU
     policy = OrderConditionedActorCritic(obs_dim, action_dim, order_dims=25).to(device_local)
@@ -77,11 +87,11 @@ def collect_single_episode(worker_id: int, scenario_path: str, red_agent_type,
     # Compliance tracking
     total_fix_actions = 0
     compliant_fix_actions = 0
-    prev_true_state = None
-    
     state = env.reset()
-    total_reward = 0
+    total_env_reward = 0.0
+    total_alignment_reward = 0.0
     steps = 0
+    last_alignment_score = 0.0
     
     for step in range(max_steps):
         # Get TRUE STATE to check what's actually compromised
@@ -104,6 +114,9 @@ def collect_single_episode(worker_id: int, scenario_path: str, red_agent_type,
         
         # Execute
         next_state, reward, done, info = env.step(action)
+
+        alignment_reward = 0.0
+        step_bonus = 0.0
         
         # Track compliance for fix actions - check ACTUAL environment state
         if action in action_to_host_type:
@@ -146,19 +159,36 @@ def collect_single_episode(worker_id: int, scenario_path: str, red_agent_type,
             elif target_type == highest_priority_compromised:
                 # ✅ Fixing the CORRECT (highest priority) compromised type!
                 compliant_fix_actions += 1
+                step_bonus = alignment_lambda * compliant_bonus_scale
             else:
                 # ❌ Fixing lower priority when higher priority exists
-                pass
+                step_bonus = -alignment_lambda * violation_penalty_scale
+
+            if total_fix_actions > 0:
+                compliance_rate = compliant_fix_actions / total_fix_actions
+                current_alignment_score = alignment_lambda * compliance_rate
+            else:
+                current_alignment_score = 0.0
+
+            alignment_reward = current_alignment_score - last_alignment_score
+            last_alignment_score = current_alignment_score
+            alignment_reward += step_bonus
+
+        if done and total_fix_actions == 0:
+            # Penalize episodes that never attempted a fix
+            alignment_reward += -alignment_lambda * max(0.5, violation_penalty_scale)
+
+        total_alignment_reward += alignment_reward
         
         # Store
         episode_states.append(augmented_state.squeeze().numpy())
         episode_actions.append(action)
-        episode_rewards.append(reward)
+        episode_rewards.append(reward + alignment_reward)
         episode_dones.append(done)
         episode_log_probs.append(log_prob.item())
         episode_values.append(value.item())
         
-        total_reward += reward
+        total_env_reward += reward
         steps += 1
         state = next_state
         
@@ -172,6 +202,8 @@ def collect_single_episode(worker_id: int, scenario_path: str, red_agent_type,
         # No fix actions - return 0.5 (neutral) to match synchronous version
         episode_compliance = 0.5
     
+    total_reward = total_env_reward + total_alignment_reward
+
     return {
         'worker_id': worker_id,
         'states': episode_states,
@@ -181,6 +213,8 @@ def collect_single_episode(worker_id: int, scenario_path: str, red_agent_type,
         'log_probs': episode_log_probs,
         'values': episode_values,
         'total_reward': total_reward,
+        'total_env_reward': total_env_reward,
+        'total_alignment_reward': total_alignment_reward,
         'steps': steps,
         'compliance': episode_compliance,
         'total_fix_actions': total_fix_actions,
@@ -198,11 +232,15 @@ class ExecutorAsyncWorkflowRLTrainer:
                  n_workers: int = 100,
                  total_episode_budget: int = 100000,
                  max_train_episodes_per_workflow: int = 500,
-                 episodes_per_update: int = 100,
+                 episodes_per_update: int = 40,
                  scenario_path: str = '/home/ubuntu/CAGE2/cage-challenge-2/CybORG/CybORG/Shared/Scenarios/Scenario2.yaml',
                  red_agent_type=RedMeanderAgent,
                  alignment_lambda: float = 30.0,
-                 compliance_threshold: float = 0.95):
+                 compliance_threshold: float = 0.95,
+                 compliant_bonus_scale: float = 0.5,
+                 violation_penalty_scale: float = 1.0,
+                 compliance_focus_weight: float = 75.0,
+                 patience_updates: int = 6):
         
         self.n_workers = n_workers
         self.total_episode_budget = total_episode_budget
@@ -212,6 +250,10 @@ class ExecutorAsyncWorkflowRLTrainer:
         self.red_agent_type = red_agent_type
         self.alignment_lambda = alignment_lambda
         self.compliance_threshold = compliance_threshold
+        self.compliant_bonus_scale = compliant_bonus_scale
+        self.violation_penalty_scale = violation_penalty_scale
+        self.compliance_focus_weight = compliance_focus_weight
+        self.patience_updates = patience_updates
         
         self.total_episodes_used = 0
         
@@ -234,6 +276,7 @@ class ExecutorAsyncWorkflowRLTrainer:
         # Store trained policies per workflow (key: workflow tuple)
         # Only inherit if training the SAME workflow again!
         self.workflow_policies = {}  # {workflow_tuple: agent}
+        self.shared_agent = None
         
         # Initialize logging
         self._init_logging()
@@ -243,6 +286,24 @@ class ExecutorAsyncWorkflowRLTrainer:
         # Save config
         config_file = os.path.join(self.checkpoint_dir, 'experiment_config.json')
         print(f"Experiment config: {config_file}")
+        
+        # Persist experiment configuration
+        config = {
+            "n_workers": self.n_workers,
+            "total_episode_budget": self.total_episode_budget,
+            "max_train_episodes_per_workflow": self.max_train_episodes_per_workflow,
+            "episodes_per_update": self.episodes_per_update,
+            "scenario_path": self.scenario_path,
+            "red_agent": self.red_agent_type.__name__,
+            "alignment_lambda": self.alignment_lambda,
+            "compliance_threshold": self.compliance_threshold,
+            "compliant_bonus_scale": self.compliant_bonus_scale,
+            "violation_penalty_scale": self.violation_penalty_scale,
+            "compliance_focus_weight": self.compliance_focus_weight,
+            "patience_updates": self.patience_updates
+        }
+        with open(config_file, 'w') as cfg:
+            json.dump(config, cfg, indent=2)
         
         # Training log
         log_filename = os.path.join(self.checkpoint_dir, "training_log.csv")
@@ -264,6 +325,25 @@ class ExecutorAsyncWorkflowRLTrainer:
         self.gp_csv_writer.writerow(['Iteration', 'Workflow', 'UCB_Score', 'Reward'])
         self.gp_log_file.flush()
         print(f"GP-UCB sampling log: {gp_log_filename}")
+    
+    def _find_closest_trained_workflow(self, workflow_order: List[str]):
+        """Return the closest previously trained workflow (by Kendall distance)"""
+        if not self.workflow_policies:
+            return None, None, None
+        
+        best_key = None
+        best_agent = None
+        best_distance = float('inf')
+        
+        for existing_key, existing_agent in self.workflow_policies.items():
+            existing_order = list(existing_key)
+            distance = self.workflow_manager.compute_kendall_distance(existing_order, workflow_order)
+            if distance < best_distance:
+                best_distance = distance
+                best_key = existing_key
+                best_agent = existing_agent
+        
+        return best_key, best_agent, best_distance
     
     def collect_episodes_async(self, agent, workflow_order: List[str], 
                                n_episodes: int) -> Tuple:
@@ -295,6 +375,8 @@ class ExecutorAsyncWorkflowRLTrainer:
                 workflow_encoding=workflow_encoding,
                 workflow_order=workflow_order,
                 alignment_lambda=self.alignment_lambda,
+                compliant_bonus_scale=self.compliant_bonus_scale,
+                violation_penalty_scale=self.violation_penalty_scale,
                 max_steps=100
             )
             futures.append(future)
@@ -334,7 +416,9 @@ class ExecutorAsyncWorkflowRLTrainer:
         all_values = []
         compliances = []
         fix_counts = []
-        episode_rewards = []
+        episode_env_rewards = []
+        episode_alignment_bonuses = []
+        episode_total_rewards = []
         
         for episode in completed_episodes:
             all_states.extend(episode['states'])
@@ -345,11 +429,14 @@ class ExecutorAsyncWorkflowRLTrainer:
             all_values.extend(episode['values'])
             compliances.append(episode['compliance'])
             fix_counts.append(episode['total_fix_actions'])
-            episode_rewards.append(episode['total_reward'])
+            episode_env_rewards.append(episode['total_env_reward'])
+            episode_alignment_bonuses.append(episode['total_alignment_reward'])
+            episode_total_rewards.append(episode['total_reward'])
         
         return (np.array(all_states), np.array(all_actions), np.array(all_rewards),
                 np.array(all_dones), np.array(all_log_probs), np.array(all_values),
-                compliances, fix_counts, episode_rewards, elapsed)
+                compliances, fix_counts, episode_env_rewards, episode_alignment_bonuses,
+                episode_total_rewards, elapsed)
     
     def train_workflow_async(self, workflow_order: List[str], workflow_id: int):
         """Train workflow using ProcessPoolExecutor async collection"""
@@ -366,6 +453,8 @@ class ExecutorAsyncWorkflowRLTrainer:
         cyborg = CybORG(self.scenario_path, 'sim', agents={'Red': self.red_agent_type})
         env = ChallengeWrapper2(env=cyborg, agent_name='Blue')
         obs_dim = env.observation_space.shape[0]
+        if obs_dim != 52:
+            raise RuntimeError(f"Unexpected observation dimension ({obs_dim}). Expected 52 to match baseline PPO input.")
         
         from workflow_rl.parallel_order_conditioned_ppo import ParallelOrderConditionedPPO, device
         
@@ -380,6 +469,8 @@ class ExecutorAsyncWorkflowRLTrainer:
                 workflow_order=workflow_order,
                 workflow_manager=self.workflow_manager,
                 alignment_lambda=self.alignment_lambda,
+                compliant_bonus_scale=self.compliant_bonus_scale,
+                violation_penalty_scale=self.violation_penalty_scale,
                 K_epochs=6,
                 eps_clip=0.2,
                 gamma=0.99,
@@ -399,11 +490,24 @@ class ExecutorAsyncWorkflowRLTrainer:
                 workflow_order=workflow_order,
                 workflow_manager=self.workflow_manager,
                 alignment_lambda=self.alignment_lambda,
+                compliant_bonus_scale=self.compliant_bonus_scale,
+                violation_penalty_scale=self.violation_penalty_scale,
                 K_epochs=6,
                 eps_clip=0.2,
                 gamma=0.99,
                 lr=0.002
             )
+            
+            closest_key, closest_agent, closest_distance = self._find_closest_trained_workflow(workflow_order)
+            if closest_agent is not None:
+                closest_order_str = ' → '.join(list(closest_key))
+                print(f"  Initializing from closest trained workflow: {closest_order_str} (Kendall distance {closest_distance:.3f})")
+                agent.policy.load_state_dict(closest_agent.policy.state_dict())
+                agent.policy_old.load_state_dict(closest_agent.policy_old.state_dict())
+            elif self.shared_agent is not None:
+                print("  No similar workflow trained; seeding from shared backbone policy")
+                agent.policy.load_state_dict(self.shared_agent.policy.state_dict())
+                agent.policy_old.load_state_dict(self.shared_agent.policy_old.state_dict())
         
         # Training loop
         total_episodes = 0
@@ -411,11 +515,21 @@ class ExecutorAsyncWorkflowRLTrainer:
         all_sampling_times = []
         all_update_times = []
         
+        avg_env_reward = 0.0
+        avg_alignment_bonus = 0.0
+        avg_total_reward = 0.0
+        avg_compliance = 0.0
+        avg_fixes = 0.0
+        best_compliance = 0.0
+        updates_since_improvement = 0
+
         while total_episodes < self.max_train_episodes_per_workflow:
             
             # Collect episodes asynchronously
             (states, actions, rewards, dones, log_probs, values,
-             compliances, fix_counts, episode_rewards, collection_time) = self.collect_episodes_async(
+             compliances, fix_counts, episode_env_rewards,
+             episode_alignment_bonuses, episode_total_rewards,
+             collection_time) = self.collect_episodes_async(
                 agent, workflow_order, self.episodes_per_update
             )
             
@@ -423,13 +537,17 @@ class ExecutorAsyncWorkflowRLTrainer:
             total_episodes += self.episodes_per_update
             
             # Calculate metrics per episode
-            avg_env_reward = np.mean(episode_rewards)  # Raw episode rewards
-            avg_compliance = np.mean(compliances)
-            avg_fixes = np.mean(fix_counts)
-            
-            # Estimate alignment bonus from compliance
-            alignment_bonus = self.alignment_lambda * avg_compliance
-            total_reward = avg_env_reward + alignment_bonus
+            avg_env_reward = np.mean(episode_env_rewards) if episode_env_rewards else 0.0
+            avg_alignment_bonus = np.mean(episode_alignment_bonuses) if episode_alignment_bonuses else 0.0
+            avg_total_reward = np.mean(episode_total_rewards) if episode_total_rewards else avg_env_reward + avg_alignment_bonus
+            avg_compliance = np.mean(compliances) if compliances else 0.0
+            avg_fixes = np.mean(fix_counts) if fix_counts else 0.0
+
+            if avg_compliance > best_compliance + 0.01:
+                best_compliance = avg_compliance
+                updates_since_improvement = 0
+            else:
+                updates_since_improvement += 1
             
             # PPO update
             update_start = time.time()
@@ -486,8 +604,8 @@ class ExecutorAsyncWorkflowRLTrainer:
             # Print progress in same format as synchronous version
             print(f"\n  Update {update_num}: Episodes: {total_episodes} total")
             print(f"    Env Reward/Episode: {avg_env_reward:.2f}")
-            print(f"    Total Reward/Episode: {total_reward:.2f}")
-            print(f"    Alignment Bonus (episode-end): {alignment_bonus:+.2f}")
+            print(f"    Total Reward/Episode: {avg_total_reward:.2f}")
+            print(f"    Alignment Bonus (episode-end): {avg_alignment_bonus:+.2f}")
             print(f"    Compliance: {avg_compliance:.2%}")
             print(f"    Avg Fixes/Episode: {avg_fixes:.1f}")
             print(f"    ⏱️ Timing: Sampling={collection_time:.2f}s, Update={update_time:.2f}s")
@@ -497,8 +615,8 @@ class ExecutorAsyncWorkflowRLTrainer:
             self.csv_writer.writerow([
                 workflow_id, ' → '.join(workflow_order), update_num, total_episodes,
                 f"{avg_env_reward:.2f}",           # Original environment reward
-                f"{alignment_bonus:.2f}",          # Compliance/alignment reward
-                f"{total_reward:.2f}",             # Customized reward (sum)
+                f"{avg_alignment_bonus:.2f}",      # Compliance/alignment reward
+                f"{avg_total_reward:.2f}",         # Customized reward (sum)
                 f"{avg_compliance:.4f}",           # Compliance rate
                 f"{avg_fixes:.1f}",                # Average fixes per episode
                 f"{collection_time:.2f}",          # Collection time
@@ -512,6 +630,11 @@ class ExecutorAsyncWorkflowRLTrainer:
                 print(f"    Episodes trained: {total_episodes}")
                 print(f"    Latest compliance: {avg_compliance:.2%}")
                 break
+            if avg_compliance < self.compliance_threshold and updates_since_improvement >= self.patience_updates:
+                print(f"\n  ⚠️  Compliance plateau detected (no improvement for {self.patience_updates} updates).")
+                print(f"    Episodes trained: {total_episodes}")
+                print(f"    Best compliance observed: {best_compliance:.2%}")
+                break
         
         # Save agent for THIS specific workflow
         self.workflow_policies[workflow_key] = agent
@@ -519,8 +642,11 @@ class ExecutorAsyncWorkflowRLTrainer:
         torch.save(agent.policy.state_dict(), checkpoint_path)
         print(f"💾 Saved checkpoint for this workflow: {checkpoint_path}")
         print(f"   Policy stored for workflow: {' → '.join(workflow_order)}\n")
+        self.shared_agent = agent
         
-        return np.mean(rewards), avg_compliance, total_episodes
+        # GP-UCB receives the raw environment reward so workflow search optimizes the task objective.
+        eval_reward = avg_env_reward
+        return eval_reward, avg_compliance, total_episodes
     
     def run_workflow_search(self):
         """Run GP-UCB workflow search with ProcessPoolExecutor async training"""
@@ -539,7 +665,7 @@ class ExecutorAsyncWorkflowRLTrainer:
         print(f"  Architecture: ProcessPoolExecutor (TRUE async!)")
         print(f"\nTraining Strategy:")
         print(f"  1. Train with alignment rewards until compliance >= {self.compliance_threshold:.1%}")
-        print(f"  2. Use training environment rewards for GP-UCB")
+        print(f"  2. Use customized (env + alignment) rewards for GP-UCB")
         print(f"  3. Continue until {self.total_episode_budget} episodes are used")
         print(f"  4. Workers collect episodes INDEPENDENTLY (no sync barriers!)")
         print(f"{'='*60}")
@@ -626,11 +752,11 @@ class ExecutorAsyncWorkflowRLTrainer:
 def main():
     parser = argparse.ArgumentParser(description='ProcessPoolExecutor Async Workflow RL Training')
     parser.add_argument('--n-workers', type=int, default=100)
-    parser.add_argument('--total-episodes', type=int, default=300000)
-    parser.add_argument('--max-episodes-per-workflow', type=int, default=20000)
+    parser.add_argument('--total-episodes', type=int, default=100000)
+    parser.add_argument('--max-episodes-per-workflow', type=int, default=10000)
     parser.add_argument('--episodes-per-update', type=int, default=100)
     parser.add_argument('--red-agent', type=str, default='B_lineAgent')
-    parser.add_argument('--alignment-lambda', type=float, default=30.0)
+    parser.add_argument('--alignment-lambda', type=float, default=40.0)
     parser.add_argument('--compliance-threshold', type=float, default=0.95)
     
     args = parser.parse_args()
@@ -672,4 +798,3 @@ if __name__ == "__main__":
     # Required for ProcessPoolExecutor on some systems
     mp.set_start_method('spawn', force=True)
     main()
-
