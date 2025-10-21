@@ -5,6 +5,12 @@ TRUE async using Python's built-in concurrent.futures - no external dependencies
 
 import os
 import sys
+import warnings
+
+os.environ.setdefault('GYM_DISABLE_WARNINGS', '1')
+os.environ.setdefault('GYM_LOG_LEVEL', 'ERROR')
+warnings.filterwarnings("ignore", category=UserWarning, module="gym")
+
 sys.path.insert(0, '/home/ubuntu/CAGE2/-cyborg-cage-2')
 
 import numpy as np
@@ -17,6 +23,12 @@ from typing import List, Tuple, Dict
 from datetime import datetime
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import multiprocessing as mp
+
+try:
+    import gym
+    gym.logger.set_level(gym.logger.ERROR)
+except Exception:
+    pass
 
 from CybORG import CybORG
 from CybORG.Agents import B_lineAgent, RedMeanderAgent, SleepAgent
@@ -608,8 +620,7 @@ class ExecutorAsyncWorkflowRLTrainer:
             print(f"    Alignment Bonus (episode-end): {avg_alignment_bonus:+.2f}")
             print(f"    Compliance: {avg_compliance:.2%}")
             print(f"    Avg Fixes/Episode: {avg_fixes:.1f}")
-            print(f"    ⏱️ Timing: Sampling={collection_time:.2f}s, Update={update_time:.2f}s")
-            print(f"    📊 Average: Sampling={avg_sampling_time:.2f}s, Update={avg_update_time:.2f}s (PPO takes {update_ratio:.1f}% of time)")
+            # Timing information removed for concise logs
             
             # Log - separate environment reward, alignment bonus, and total reward
             self.csv_writer.writerow([
