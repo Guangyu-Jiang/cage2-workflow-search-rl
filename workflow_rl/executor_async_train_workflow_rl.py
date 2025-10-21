@@ -30,7 +30,7 @@ def collect_single_episode(worker_id: int, scenario_path: str, red_agent_type,
                            policy_weights_cpu: Dict, workflow_encoding: np.ndarray,
                            workflow_order: List[str], alignment_lambda: float = 30.0,
                            compliant_bonus_scale: float = 0.0,
-                           violation_penalty_scale: float = 0.5,
+                           violation_penalty_scale: float = 0.0,
                            max_steps: int = 100):
     """
     Worker function that collects ONE complete episode.
@@ -238,7 +238,7 @@ class ExecutorAsyncWorkflowRLTrainer:
                  alignment_lambda: float = 30.0,
                  compliance_threshold: float = 0.95,
                  compliant_bonus_scale: float = 0.0,
-                 violation_penalty_scale: float = 0.5,
+                 violation_penalty_scale: float = 0.0,
                  compliance_focus_weight: float = 75.0,
                  patience_updates: int = 12):
         

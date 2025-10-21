@@ -24,7 +24,7 @@ class ParallelOrderConditionedPPO:
                  alignment_lambda: float = 10.0,
                  update_steps: int = 100,
                  compliant_bonus_scale: float = 0.0,
-                 violation_penalty_scale: float = 0.5):  # Update every 100 steps (full episode) = 2500 transitions with 25 envs
+                 violation_penalty_scale: float = 0.0):  # Update every 100 steps (full episode) = 2500 transitions with 25 envs
         """
         Initialize parallel PPO agent
         
