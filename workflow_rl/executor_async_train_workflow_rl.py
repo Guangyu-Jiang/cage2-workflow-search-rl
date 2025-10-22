@@ -6,6 +6,8 @@ TRUE async using Python's built-in concurrent.futures - no external dependencies
 import os
 import sys
 import warnings
+import contextlib
+import io
 
 os.environ.setdefault('GYM_DISABLE_WARNINGS', '1')
 os.environ.setdefault('GYM_LOG_LEVEL', 'ERROR')
@@ -25,10 +27,11 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import multiprocessing as mp
 
 try:
-    import gym
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        import gym
     gym.logger.set_level(gym.logger.ERROR)
 except Exception:
-    pass
+    gym = None
 
 from CybORG import CybORG
 from CybORG.Agents import B_lineAgent, RedMeanderAgent, SleepAgent
@@ -50,6 +53,14 @@ def collect_single_episode(worker_id: int, scenario_path: str, red_agent_type,
     
     This function is submitted to ProcessPoolExecutor.
     """
+    # Silence gym warnings inside worker processes as well
+    try:
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            import gym as _gym
+        _gym.logger.set_level(_gym.logger.ERROR)
+    except Exception:
+        pass
+
     # Create environment in worker process
     cyborg = CybORG(scenario_path, 'sim', agents={'Red': red_agent_type})
     env = ChallengeWrapper2(env=cyborg, agent_name='Blue')
