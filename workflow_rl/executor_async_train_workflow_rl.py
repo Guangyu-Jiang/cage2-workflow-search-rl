@@ -263,7 +263,8 @@ class ExecutorAsyncWorkflowRLTrainer:
                  compliant_bonus_scale: float = 0.0,
                  violation_penalty_scale: float = 0.0,
                  compliance_focus_weight: float = 75.0,
-                 patience_updates: int = 12):
+                 patience_updates: int = 12,
+                 verbose_collection: bool = False):
         
         self.n_workers = n_workers
         self.total_episode_budget = total_episode_budget
@@ -277,6 +278,7 @@ class ExecutorAsyncWorkflowRLTrainer:
         self.violation_penalty_scale = violation_penalty_scale
         self.compliance_focus_weight = compliance_focus_weight
         self.patience_updates = patience_updates
+        self.verbose_collection = verbose_collection
         
         self.total_episodes_used = 0
         
@@ -379,8 +381,9 @@ class ExecutorAsyncWorkflowRLTrainer:
         # Move policy weights to CPU for workers
         policy_weights_cpu = {k: v.cpu() for k, v in agent.policy_old.state_dict().items()}
         
-        print(f"📦 Submitting {n_episodes} episode collection tasks to {self.n_workers} workers...")
-        print(f"   Workers run INDEPENDENTLY (ProcessPoolExecutor async!)")
+        if self.verbose_collection:
+            print(f"📦 Submitting {n_episodes} episode collection tasks to {self.n_workers} workers...")
+            print(f"   Workers run INDEPENDENTLY (ProcessPoolExecutor async!)")
         
         start_time = time.time()
         
@@ -404,7 +407,8 @@ class ExecutorAsyncWorkflowRLTrainer:
             )
             futures.append(future)
         
-        print(f"✅ {n_episodes} tasks submitted! Collecting as they complete...")
+        if self.verbose_collection:
+            print(f"✅ {n_episodes} tasks submitted! Collecting as they complete...")
         
         # Collect results as they complete (async!)
         completed_episodes = []
@@ -416,7 +420,7 @@ class ExecutorAsyncWorkflowRLTrainer:
                 completed_episodes.append(result)
                 collected += 1
                 
-                if collected % 10 == 0 or collected == n_episodes:
+                if self.verbose_collection and (collected % 10 == 0 or collected == n_episodes):
                     elapsed = time.time() - start_time
                     rate = collected / elapsed
                     print(f"  {collected}/{n_episodes} episodes ({rate:.1f} eps/sec)")
@@ -427,8 +431,9 @@ class ExecutorAsyncWorkflowRLTrainer:
         
         elapsed = time.time() - start_time
         rate = len(completed_episodes) / elapsed
-        print(f"✅ Collected {len(completed_episodes)} episodes in {elapsed:.1f}s ({rate:.1f} eps/sec)")
-        print(f"   Workers ran INDEPENDENTLY (true async!)\n")
+        if self.verbose_collection:
+            print(f"✅ Collected {len(completed_episodes)} episodes in {elapsed:.1f}s ({rate:.1f} eps/sec)")
+            print(f"   Workers ran INDEPENDENTLY (true async!)\n")
         
         # Aggregate episode data
         all_states = []
