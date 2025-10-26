@@ -347,7 +347,7 @@ class ExecutorAsyncWorkflowRLTrainer:
         gp_log_filename = os.path.join(self.checkpoint_dir, "gp_sampling_log.csv")
         self.gp_log_file = open(gp_log_filename, 'w', newline='')
         self.gp_csv_writer = csv.writer(self.gp_log_file)
-        self.gp_csv_writer.writerow(['Iteration', 'Workflow', 'UCB_Score', 'Reward'])
+        self.gp_csv_writer.writerow(['Iteration', 'Workflow', 'UCB_Score', 'Reward', 'Final_Compliance', 'Episodes_Trained'])
         self.gp_log_file.flush()
         print(f"GP-UCB sampling log: {gp_log_filename}")
     
@@ -750,13 +750,21 @@ class ExecutorAsyncWorkflowRLTrainer:
             # Update GP model
             self.gp_search.add_observation(workflow_order, eval_reward)
             
-            # Log
-            self.gp_csv_writer.writerow([iteration, ' → '.join(workflow_order), ucb_score, eval_reward])
+            # Log with final compliance and episodes trained
+            self.gp_csv_writer.writerow([
+                iteration, 
+                ' → '.join(workflow_order), 
+                f"{ucb_score:.4f}",
+                f"{eval_reward:.2f}",
+                f"{compliance:.4f}",  # Final compliance rate
+                episodes_used  # Total episodes used for this workflow
+            ])
             self.gp_log_file.flush()
             
             print(f"📈 GP model updated")
             print(f"   Reward: {eval_reward:.2f}")
-            print(f"   Compliance: {compliance:.1%}\n")
+            print(f"   Compliance: {compliance:.1%}")
+            print(f"   Episodes used: {episodes_used}\n")
         
         print("\n" + "="*60)
         print("✅ Training Complete!")
