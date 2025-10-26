@@ -348,7 +348,7 @@ class ExecutorAsyncWorkflowRLTrainer:
         gp_log_filename = os.path.join(self.checkpoint_dir, "gp_sampling_log.csv")
         self.gp_log_file = open(gp_log_filename, 'w', newline='')
         self.gp_csv_writer = csv.writer(self.gp_log_file)
-        self.gp_csv_writer.writerow(['Iteration', 'Workflow', 'UCB_Score', 'Reward', 'Final_Compliance', 'Episodes_Trained'])
+        self.gp_csv_writer.writerow(['Iteration', 'Workflow', 'UCB_Score', 'Reward', 'Final_Compliance', 'Episodes_Trained', 'GP_Updated'])
         self.gp_log_file.flush()
         print(f"GP-UCB sampling log: {gp_log_filename}")
     
@@ -748,8 +748,20 @@ class ExecutorAsyncWorkflowRLTrainer:
             
             self.total_episodes_used += episodes_used
             
-            # Update GP model
-            self.gp_search.add_observation(workflow_order, eval_reward)
+            # Update GP model ONLY if compliance threshold met
+            # This ensures we only compare workflows that achieved the required compliance
+            if compliance >= self.compliance_threshold:
+                self.gp_search.add_observation(workflow_order, eval_reward)
+                gp_updated = True
+                print(f"📈 GP model updated (compliance {compliance:.1%} >= {self.compliance_threshold:.1%})")
+                print(f"   Reward: {eval_reward:.2f}")
+                print(f"   Episodes used: {episodes_used}")
+            else:
+                gp_updated = False
+                print(f"⚠️  GP model NOT updated (compliance {compliance:.1%} < {self.compliance_threshold:.1%})")
+                print(f"   Workflow did not meet compliance threshold")
+                print(f"   Reward: {eval_reward:.2f} (not used for GP)")
+                print(f"   Episodes used: {episodes_used}")
             
             # Log with final compliance and episodes trained
             self.gp_csv_writer.writerow([
@@ -758,14 +770,12 @@ class ExecutorAsyncWorkflowRLTrainer:
                 f"{ucb_score:.4f}",
                 f"{eval_reward:.2f}",
                 f"{compliance:.4f}",  # Final compliance rate
-                episodes_used  # Total episodes used for this workflow
+                episodes_used,  # Total episodes used for this workflow
+                'Yes' if gp_updated else 'No'  # Whether GP was updated
             ])
             self.gp_log_file.flush()
             
-            print(f"📈 GP model updated")
-            print(f"   Reward: {eval_reward:.2f}")
-            print(f"   Compliance: {compliance:.1%}")
-            print(f"   Episodes used: {episodes_used}\n")
+            print()
         
         print("\n" + "="*60)
         print("✅ Training Complete!")
