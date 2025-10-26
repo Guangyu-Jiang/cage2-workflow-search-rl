@@ -41,33 +41,6 @@ from workflow_rl.order_based_workflow import OrderBasedWorkflow
 from workflow_rl.gp_ucb_order_search import GPUCBOrderSearch
 
 
-def compute_progressive_alignment_bonus(compliance_rate: float, base_lambda: float) -> float:
-    """
-    Compute alignment bonus with progressive scaling.
-    
-    Strategy:
-    - Below 90%: Linear scaling (standard learning)
-    - Above 90%: Exponential boost toward 95% (strong incentive)
-    
-    This makes the final 5% (90% → 95%) much more rewarding,
-    helping agents push through the plateau.
-    """
-    if compliance_rate < 0.90:
-        # Standard linear scaling
-        return base_lambda * compliance_rate
-    else:
-        # Exponential boost as we approach 95%
-        distance_from_target = max(0.95 - compliance_rate, 0.001)
-        
-        # Boost factor grows exponentially as we get closer to 95%
-        # At 90%: boost ~1.0 (minimal boost)
-        # At 93%: boost ~1.5
-        # At 95%: boost ~2.7 (nearly 3x multiplier!)
-        boost_factor = 1.0 + np.exp(-10.0 * distance_from_target)
-        
-        return base_lambda * compliance_rate * boost_factor
-
-
 def collect_single_episode(worker_id: int, scenario_path: str, red_agent_type,
                            policy_weights_cpu: Dict, workflow_encoding: np.ndarray,
                            workflow_order: List[str], alignment_lambda: float = 30.0,
@@ -216,8 +189,8 @@ def collect_single_episode(worker_id: int, scenario_path: str, red_agent_type,
 
             if total_fix_actions > 0:
                 compliance_rate = compliant_fix_actions / total_fix_actions
-                # Use progressive scaling for stronger incentive near 95%
-                current_alignment_score = compute_progressive_alignment_bonus(compliance_rate, alignment_lambda)
+                # Simple linear scaling (back to original)
+                current_alignment_score = alignment_lambda * compliance_rate
             else:
                 current_alignment_score = 0.0
 
@@ -287,7 +260,7 @@ class ExecutorAsyncWorkflowRLTrainer:
                  scenario_path: str = '/home/ubuntu/CAGE2/cage-challenge-2/CybORG/CybORG/Shared/Scenarios/Scenario2.yaml',
                  red_agent_type=RedMeanderAgent,
                  alignment_lambda: float = 30.0,
-                 compliance_threshold: float = 0.95,
+                 compliance_threshold: float = 0.90,
                  compliant_bonus_scale: float = 0.0,
                  violation_penalty_scale: float = 0.0,
                  compliance_focus_weight: float = 75.0,
@@ -625,14 +598,8 @@ class ExecutorAsyncWorkflowRLTrainer:
             old_actions = torch.LongTensor(actions).to(device)
             old_logprobs = torch.FloatTensor(log_probs).to(device)
             
-            # Adaptive K_epochs: use more epochs when fine-tuning compliance
-            if avg_compliance >= 0.85:
-                current_k_epochs = agent.K_epochs * 2  # Double epochs when close to 95%
-            else:
-                current_k_epochs = agent.K_epochs  # Normal epochs
-            
-            # PPO update
-            for epoch in range(current_k_epochs):
+            # PPO update (back to fixed K_epochs)
+            for epoch in range(agent.K_epochs):
                 logits = agent.policy.actor(old_states)
                 state_values = agent.policy.critic(old_states).squeeze()
                 
@@ -825,8 +792,8 @@ def main():
     parser.add_argument('--max-episodes-per-workflow', type=int, default=10000)
     parser.add_argument('--episodes-per-update', type=int, default=100)
     parser.add_argument('--red-agent', type=str, default='B_lineAgent')
-    parser.add_argument('--alignment-lambda', type=float, default=40.0)
-    parser.add_argument('--compliance-threshold', type=float, default=0.95)
+    parser.add_argument('--alignment-lambda', type=float, default=30.0)
+    parser.add_argument('--compliance-threshold', type=float, default=0.90)
     
     args = parser.parse_args()
     
