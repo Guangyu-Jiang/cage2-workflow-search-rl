@@ -11,17 +11,17 @@ echo "  ✓ Python's built-in ProcessPoolExecutor"
 echo "  ✓ No external dependencies (no Ray needed)"
 echo "  ✓ Workers collect episodes INDEPENDENTLY"
 echo "  ✓ as_completed() for true async collection"
-echo "  ✓ Expected 50-150+ episodes/sec with 100 workers"
+echo "  ✓ Expected 100-200+ episodes/sec with 200 workers"
 echo ""
 
 python workflow_rl/executor_async_train_workflow_rl.py \
-    --n-workers 100 \
+    --n-workers 200 \
     --total-episodes 100000 \
-    --max-episodes-per-workflow 500 \
-    --episodes-per-update 100 \
+    --max-episodes-per-workflow 10000 \
+    --episodes-per-update 200 \
     --red-agent B_lineAgent \
     --alignment-lambda 30.0 \
-    --compliance-threshold 0.95
+    --compliance-threshold 0.90
 
 echo ""
 echo "✅ Training complete!"

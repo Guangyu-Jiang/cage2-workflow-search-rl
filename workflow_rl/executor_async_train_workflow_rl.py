@@ -253,10 +253,10 @@ class ExecutorAsyncWorkflowRLTrainer:
     """
     
     def __init__(self, 
-                 n_workers: int = 100,
+                 n_workers: int = 200,
                  total_episode_budget: int = 100000,
                  max_train_episodes_per_workflow: int = 500,
-                 episodes_per_update: int = 40,
+                 episodes_per_update: int = 200,
                  scenario_path: str = '/home/ubuntu/CAGE2/cage-challenge-2/CybORG/CybORG/Shared/Scenarios/Scenario2.yaml',
                  red_agent_type=RedMeanderAgent,
                  alignment_lambda: float = 30.0,
@@ -787,10 +787,10 @@ class ExecutorAsyncWorkflowRLTrainer:
 
 def main():
     parser = argparse.ArgumentParser(description='ProcessPoolExecutor Async Workflow RL Training')
-    parser.add_argument('--n-workers', type=int, default=100)
+    parser.add_argument('--n-workers', type=int, default=200)
     parser.add_argument('--total-episodes', type=int, default=100000)
     parser.add_argument('--max-episodes-per-workflow', type=int, default=10000)
-    parser.add_argument('--episodes-per-update', type=int, default=100)
+    parser.add_argument('--episodes-per-update', type=int, default=200)
     parser.add_argument('--red-agent', type=str, default='B_lineAgent')
     parser.add_argument('--alignment-lambda', type=float, default=30.0)
     parser.add_argument('--compliance-threshold', type=float, default=0.90)

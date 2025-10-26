@@ -8,14 +8,14 @@
 
 ### **Parallelization:**
 ```python
-n_workers = 100              # Number of parallel worker processes
+n_workers = 200              # Number of parallel worker processes
 ```
 
 ### **Episode Budget:**
 ```python
 total_episode_budget = 100000           # Total episodes across all workflows
 max_train_episodes_per_workflow = 10000 # Max episodes per workflow (hard cap)
-episodes_per_update = 100               # Episodes collected before each PPO update
+episodes_per_update = 200               # Episodes collected before each PPO update
 ```
 
 ### **Environment:**
@@ -101,10 +101,10 @@ n_candidate_workflows = 120  # Evaluate ALL permutations (5! = 120)
 
 | Category | Parameter | Default Value | Unit |
 |----------|-----------|---------------|------|
-| **Workers** | n_workers | 100 | workers |
+| **Workers** | n_workers | 200 | workers |
 | **Budget** | total_episode_budget | 100,000 | episodes |
 | **Budget** | max_episodes_per_workflow | 10,000 | episodes |
-| **Budget** | episodes_per_update | 100 | episodes |
+| **Budget** | episodes_per_update | 200 | episodes |
 | **Compliance** | compliance_threshold | **0.90** | rate |
 | **Compliance** | patience_updates | 12 | updates |
 | **Reward** | alignment_lambda | 30.0 | weight |
