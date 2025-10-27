@@ -12,6 +12,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 import csv
+import json
 from datetime import datetime
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Dict, List, Tuple
@@ -188,6 +189,7 @@ def train_parallel_baseline(n_workers: int = 200,
                             total_episodes: int = 100000,
                             episodes_per_update: int = 200,
                             red_agent_type=B_lineAgent,
+                            max_steps: int = 100,
                             scenario_path: str = '/home/ubuntu/CAGE2/cage-challenge-2/CybORG/CybORG/Shared/Scenarios/Scenario2.yaml'):
     """
     Train baseline PPO with parallel episode collection
@@ -209,6 +211,42 @@ def train_parallel_baseline(n_workers: int = 200,
     exp_dir = f"logs/parallel_baseline_{timestamp}"
     os.makedirs(exp_dir, exist_ok=True)
     
+    # Save configuration file
+    config = {
+        'experiment_name': os.path.basename(exp_dir),
+        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'algorithm': 'Parallel Baseline PPO (No Workflow Conditioning)',
+        'environment': {
+            'n_workers': n_workers,
+            'max_steps': max_steps,
+            'red_agent_type': red_agent_type.__name__,
+            'scenario': scenario_path
+        },
+        'training': {
+            'total_episodes': total_episodes,
+            'episodes_per_update': episodes_per_update
+        },
+        'ppo_hyperparameters': {
+            'K_epochs': 6,
+            'learning_rate': 0.002,
+            'eps_clip': 0.2,
+            'gamma': 0.99
+        },
+        'network': {
+            'input_dims': 52,
+            'hidden_dims': 64,
+            'output_dims': 145,
+            'architecture': 'Simple Actor-Critic (NO workflow conditioning)'
+        }
+    }
+    
+    config_file = os.path.join(exp_dir, 'experiment_config.json')
+    with open(config_file, 'w') as f:
+        json.dump(config, f, indent=2)
+    
+    print(f"Experiment config: {config_file}")
+    
+    # Training log
     log_filename = os.path.join(exp_dir, "training_log.csv")
     log_file = open(log_filename, 'w', newline='')
     csv_writer = csv.writer(log_file)
@@ -256,7 +294,7 @@ def train_parallel_baseline(n_workers: int = 200,
                 scenario_path=scenario_path,
                 red_agent_type=red_agent_type,
                 policy_weights_cpu=policy_weights_cpu,
-                max_steps=100
+                max_steps=max_steps
             )
             futures.append(future)
         
