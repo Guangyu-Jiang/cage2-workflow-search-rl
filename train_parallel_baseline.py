@@ -358,9 +358,9 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description='Parallel Baseline PPO Training (No Workflow)')
-    parser.add_argument('--n-workers', type=int, default=200)
+    parser.add_argument('--n-workers', type=int, default=50)
     parser.add_argument('--total-episodes', type=int, default=100000)
-    parser.add_argument('--episodes-per-update', type=int, default=200)
+    parser.add_argument('--episodes-per-update', type=int, default=50)
     parser.add_argument('--red-agent', type=str, default='B_lineAgent',
                        choices=['B_lineAgent', 'RedMeanderAgent', 'SleepAgent'])
     
@@ -396,4 +396,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
