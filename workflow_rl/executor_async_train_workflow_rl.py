@@ -253,10 +253,10 @@ class ExecutorAsyncWorkflowRLTrainer:
     """
     
     def __init__(self, 
-                 n_workers: int = 200,
+                 n_workers: int = 50,
                  total_episode_budget: int = 100000,
-                 max_train_episodes_per_workflow: int = 500,
-                 episodes_per_update: int = 200,
+                 max_train_episodes_per_workflow: int = 100,
+                 episodes_per_update: int = 50,
                  scenario_path: str = '/home/ubuntu/CAGE2/cage-challenge-2/CybORG/CybORG/Shared/Scenarios/Scenario2.yaml',
                  red_agent_type=RedMeanderAgent,
                  alignment_lambda: float = 30.0,
@@ -264,7 +264,7 @@ class ExecutorAsyncWorkflowRLTrainer:
                  compliant_bonus_scale: float = 0.0,
                  violation_penalty_scale: float = 0.0,
                  compliance_focus_weight: float = 75.0,
-                 patience_updates: int = 12,
+                 patience_updates: int = 15,
                  verbose_collection: bool = False):
         
         self.n_workers = n_workers
@@ -336,7 +336,7 @@ class ExecutorAsyncWorkflowRLTrainer:
         self.log_file = open(log_filename, 'w', newline='')
         self.csv_writer = csv.writer(self.log_file)
         self.csv_writer.writerow([
-            'Workflow_ID', 'Workflow_Order', 'Update', 'Episodes',
+            'Workflow_ID', 'Workflow_Order', 'Update', 'Episodes', 'Total_Episodes_Sampled',
             'Env_Reward', 'Alignment_Bonus', 'Total_Reward', 'Compliance',
             'Avg_Fixes', 'Collection_Time', 'Update_Time'
         ])
@@ -639,9 +639,13 @@ class ExecutorAsyncWorkflowRLTrainer:
             print(f"    Avg Fixes/Episode: {avg_fixes:.1f}")
             # Timing information removed for concise logs
             
+            # Calculate cumulative episodes (across all workflows)
+            cumulative_episodes = self.total_episodes_used + total_episodes
+            
             # Log - separate environment reward, alignment bonus, and total reward
             self.csv_writer.writerow([
                 workflow_id, ' → '.join(workflow_order), update_num, total_episodes,
+                cumulative_episodes,                # Total episodes sampled from environment
                 f"{avg_env_reward:.2f}",           # Original environment reward
                 f"{avg_alignment_bonus:.2f}",      # Compliance/alignment reward
                 f"{avg_total_reward:.2f}",         # Customized reward (sum)
