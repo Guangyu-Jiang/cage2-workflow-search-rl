@@ -6,21 +6,22 @@
 echo "🚀 Starting Fixed-Episodes Training (Ablation Study)"
 echo "=========================================="
 echo ""
-echo "Key Differences from Compliance-Based Training:"
-echo "  ❌ NO alignment rewards (alignment_lambda = 0)"
-echo "  ❌ NO compliance-based early stopping"
-echo "  ✓ Trains for EXACTLY 1000 episodes per workflow"
-echo "  ✓ Compliance still logged (for analysis)"
+echo "Key Differences from Adaptive Termination Version:"
+echo "  ✓ KEEPS alignment rewards (lambda × compliance)"
+echo "  ❌ NO compliance-based early stopping (no stop at 90%)"
+echo "  ❌ NO plateau detection"
+echo "  ✓ Trains for EXACTLY 2500 episodes per workflow"
 echo ""
 echo "Purpose:"
-echo "  Show value of compliance-based training by comparison"
+echo "  Test value of adaptive termination vs fixed episodes"
 echo ""
 
 python workflow_rl/executor_async_fixed_episodes.py \
-    --n-workers 200 \
+    --n-workers 50 \
     --total-episodes 100000 \
-    --fixed-episodes-per-workflow 1000 \
-    --episodes-per-update 200 \
+    --fixed-episodes-per-workflow 2500 \
+    --episodes-per-update 50 \
+    --alignment-lambda 30.0 \
     --red-agent B_lineAgent
 
 echo ""
