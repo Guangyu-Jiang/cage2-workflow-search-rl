@@ -809,7 +809,7 @@ def main():
     parser = argparse.ArgumentParser(description='Fixed-Episodes Workflow Training (NO Compliance-Based Training)')
     parser.add_argument('--n-workers', type=int, default=50)
     parser.add_argument('--total-episodes', type=int, default=100000)
-    parser.add_argument('--fixed-episodes-per-workflow', type=int, default=5000,
+    parser.add_argument('--fixed-episodes-per-workflow', type=int, default=2500,
                        help='Train for EXACTLY this many episodes per workflow (no early stopping)')
     parser.add_argument('--episodes-per-update', type=int, default=50)
     parser.add_argument('--alignment-lambda', type=float, default=30.0,
