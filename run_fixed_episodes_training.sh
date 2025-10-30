@@ -9,8 +9,10 @@ echo ""
 echo "Key Differences from Adaptive Termination Version:"
 echo "  ✓ KEEPS alignment rewards (lambda × compliance)"
 echo "  ❌ NO compliance-based early stopping (no stop at 90%)"
-echo "  ❌ NO plateau detection"
-echo "  ✓ Trains for EXACTLY 2500 episodes per workflow"
+echo "  ❌ NO plateau detection"  
+echo "  ❌ NO compliance gating for GP updates"
+echo "  ✓ Trains for EXACTLY 5000 episodes per workflow"
+echo "  ✓ ALL workflows added to GP (fair comparison)"
 echo ""
 echo "Purpose:"
 echo "  Test value of adaptive termination vs fixed episodes"
@@ -19,7 +21,7 @@ echo ""
 python workflow_rl/executor_async_fixed_episodes.py \
     --n-workers 50 \
     --total-episodes 100000 \
-    --fixed-episodes-per-workflow 2500 \
+    --fixed-episodes-per-workflow 5000 \
     --episodes-per-update 50 \
     --alignment-lambda 30.0 \
     --red-agent B_lineAgent

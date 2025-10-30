@@ -763,20 +763,15 @@ class ExecutorAsyncFixedEpisodesTrainer:
             
             self.total_episodes_used += episodes_used
             
-            # Update GP model ONLY if compliance threshold met
-            # This ensures we only compare workflows that achieved the required compliance
-            if compliance >= self.compliance_threshold:
-                self.gp_search.add_observation(workflow_order, eval_reward)
-                gp_updated = True
-                print(f"📈 GP model updated (compliance {compliance:.1%} >= {self.compliance_threshold:.1%})")
-                print(f"   Reward: {eval_reward:.2f}")
-                print(f"   Episodes used: {episodes_used}")
-            else:
-                gp_updated = False
-                print(f"⚠️  GP model NOT updated (compliance {compliance:.1%} < {self.compliance_threshold:.1%})")
-                print(f"   Workflow did not meet compliance threshold")
-                print(f"   Reward: {eval_reward:.2f} (not used for GP)")
-                print(f"   Episodes used: {episodes_used}")
+            # Update GP model for ALL workflows (no compliance gating!)
+            # Since all workflows trained for same fixed episodes, fair to compare all
+            self.gp_search.add_observation(workflow_order, eval_reward)
+            gp_updated = True  # Always updated in fixed-episodes version
+            
+            print(f"📈 GP model updated (all workflows added since trained equally)")
+            print(f"   Reward: {eval_reward:.2f}")
+            print(f"   Compliance: {compliance:.1%} (logged but not gated)")
+            print(f"   Episodes used: {episodes_used}")
             
             # Log with final compliance and episodes trained
             self.gp_csv_writer.writerow([
@@ -786,7 +781,7 @@ class ExecutorAsyncFixedEpisodesTrainer:
                 f"{eval_reward:.2f}",
                 f"{compliance:.4f}",  # Final compliance rate
                 episodes_used,  # Total episodes used for this workflow
-                'Yes' if gp_updated else 'No'  # Whether GP was updated
+                'Yes'  # Always Yes in fixed-episodes version (all workflows trained equally)
             ])
             self.gp_log_file.flush()
             
@@ -814,7 +809,7 @@ def main():
     parser = argparse.ArgumentParser(description='Fixed-Episodes Workflow Training (NO Compliance-Based Training)')
     parser.add_argument('--n-workers', type=int, default=50)
     parser.add_argument('--total-episodes', type=int, default=100000)
-    parser.add_argument('--fixed-episodes-per-workflow', type=int, default=2500,
+    parser.add_argument('--fixed-episodes-per-workflow', type=int, default=5000,
                        help='Train for EXACTLY this many episodes per workflow (no early stopping)')
     parser.add_argument('--episodes-per-update', type=int, default=50)
     parser.add_argument('--alignment-lambda', type=float, default=30.0,
