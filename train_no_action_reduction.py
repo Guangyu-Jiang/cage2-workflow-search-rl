@@ -192,13 +192,13 @@ def main(red_agent_type='bline', use_decoys=False):
     
     # Training hyperparameters (matching original for fair comparison)
     print_interval = 50
-    save_interval = 200
+    save_interval = 10000
     max_episodes = 100000  # Reduced for testing, use 100000 for full training
     max_timesteps = 100
     
     # IMPORTANT: Buffer size before update
     # Original: 20000 steps = 200 episodes before each update
-    update_timesteps = 20000  # This means collect 200 episodes before updating
+    update_timesteps = 5000  # This means collect 200 episodes before updating
     
     K_epochs = 6  # PPO optimization epochs
     eps_clip = 0.2

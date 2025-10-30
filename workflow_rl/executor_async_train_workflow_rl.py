@@ -253,18 +253,18 @@ class ExecutorAsyncWorkflowRLTrainer:
     """
     
     def __init__(self, 
-                 n_workers: int = 50,
+                 n_workers: int = 25,
                  total_episode_budget: int = 100000,
-                 max_train_episodes_per_workflow: int = 100,
-                 episodes_per_update: int = 50,
+                 max_train_episodes_per_workflow: int = 200,
+                 episodes_per_update: int = 25,
                  scenario_path: str = '/home/ubuntu/CAGE2/cage-challenge-2/CybORG/CybORG/Shared/Scenarios/Scenario2.yaml',
                  red_agent_type=RedMeanderAgent,
-                 alignment_lambda: float = 30.0,
+                 alignment_lambda: float = 100.0,
                  compliance_threshold: float = 0.90,
                  compliant_bonus_scale: float = 0.0,
                  violation_penalty_scale: float = 0.0,
                  compliance_focus_weight: float = 75.0,
-                 patience_updates: int = 15,
+                 patience_updates: int = 200,
                  verbose_collection: bool = False):
         
         self.n_workers = n_workers
@@ -801,13 +801,13 @@ class ExecutorAsyncWorkflowRLTrainer:
 
 def main():
     parser = argparse.ArgumentParser(description='ProcessPoolExecutor Async Workflow RL Training')
-    parser.add_argument('--n-workers', type=int, default=200)
+    parser.add_argument('--n-workers', type=int, default=50)
     parser.add_argument('--total-episodes', type=int, default=100000)
     parser.add_argument('--max-episodes-per-workflow', type=int, default=10000)
-    parser.add_argument('--episodes-per-update', type=int, default=200)
+    parser.add_argument('--episodes-per-update', type=int, default=50)
     parser.add_argument('--red-agent', type=str, default='B_lineAgent')
-    parser.add_argument('--alignment-lambda', type=float, default=30.0)
-    parser.add_argument('--compliance-threshold', type=float, default=0.90)
+    parser.add_argument('--alignment-lambda', type=float, default=100.0)
+    parser.add_argument('--compliance-threshold', type=float, default=0.50)
     
     args = parser.parse_args()
     
