@@ -1,14 +1,15 @@
 """
-Fixed-Episodes Training (NO Warm Start)
-Trains each workflow for a FIXED number of episodes, starting from scratch each time.
+Fixed-Episodes Training (Workflow-Specific Resume, NO Cross-Workflow Transfer)
+Trains each workflow for FIXED episodes. Can resume SAME workflow, but NO transfer learning.
 
 Key characteristics:
-  - NO warm starting - each workflow trains from random initialization
+  - Can resume if training SAME workflow again (workflow-specific policy)
+  - NO transfer learning from OTHER workflows (pure comparison)
   - Compliance IS used for alignment rewards
   - Compliance is NOT used for early stopping
   - Trains for exactly fixed_episodes_per_workflow episodes
   
-This tests the pure effect of fixed episode budgets without transfer learning.
+This tests fixed episode budgets with workflow-specific learning (no cross-workflow transfer).
 """
 
 import os
@@ -256,15 +257,16 @@ def collect_single_episode(worker_id: int, scenario_path: str, red_agent_type,
 
 class ExecutorAsyncFixedEpisodesNoWarmstartTrainer:
     """
-    Fixed-episodes trainer with NO warm starting.
-    Each workflow trains from scratch (random initialization).
+    Fixed-episodes trainer with workflow-specific resume only.
+    Can resume SAME workflow, but NO cross-workflow transfer learning.
     
     Key characteristics:
-    - NO transfer learning between workflows
+    - Can resume if training SAME workflow again
+    - NO transfer learning from OTHER workflows
     - KEEPS alignment rewards (compliance used for rewards)
     - NO early stopping based on compliance
     - Trains for exactly fixed_episodes_per_workflow episodes
-    - Pure test of fixed episode budgets without policy reuse
+    - Tests fixed episodes with workflow-specific policies (no transfer)
     """
     
     def __init__(self, 
@@ -307,11 +309,11 @@ class ExecutorAsyncFixedEpisodesNoWarmstartTrainer:
         self.checkpoint_dir = os.path.join("logs", self.experiment_name)
         os.makedirs(self.checkpoint_dir, exist_ok=True)
         
-        print(f"\nStarting FIXED-EPISODES (NO WARM START) experiment with PID: {pid}")
-        print(f"   Warm starting: NO (each workflow trains from scratch)")
+        print(f"\nStarting FIXED-EPISODES (Workflow-Specific) experiment with PID: {pid}")
+        print(f"   Policy reuse: SAME workflow only (no cross-workflow transfer)")
         print(f"   Compliance rewards: YES (alignment_lambda={alignment_lambda})")
         print(f"   Fixed episodes per workflow: {fixed_episodes_per_workflow}")
-        print(f"   Tests: Pure fixed-episode training without transfer learning")
+        print(f"   Tests: Fixed episodes with workflow-specific learning")
         
         # Create ProcessPoolExecutor
         self.executor = ProcessPoolExecutor(max_workers=n_workers)
@@ -335,7 +337,7 @@ class ExecutorAsyncFixedEpisodesNoWarmstartTrainer:
         
         # Persist experiment configuration
         config = {
-            "experiment_type": "Fixed Episodes (NO Warm Start, NO Adaptive Termination)",
+            "experiment_type": "Fixed Episodes (Workflow-Specific, NO Cross-Workflow Transfer)",
             "n_workers": self.n_workers,
             "total_episode_budget": self.total_episode_budget,
             "fixed_episodes_per_workflow": self.fixed_episodes_per_workflow,
@@ -343,8 +345,9 @@ class ExecutorAsyncFixedEpisodesNoWarmstartTrainer:
             "scenario_path": self.scenario_path,
             "red_agent": self.red_agent_type.__name__,
             "alignment_lambda": self.alignment_lambda,
-            "warm_start": False,  # Each workflow trains from scratch
-            "note": "No policy reuse between workflows. Tests pure fixed-episode training."
+            "same_workflow_resume": True,   # Can resume SAME workflow
+            "cross_workflow_transfer": False,  # NO transfer from OTHER workflows
+            "note": "Workflow-specific policies only. No cross-workflow transfer learning."
         }
         with open(config_file, 'w') as cfg:
             json.dump(config, cfg, indent=2)
@@ -476,7 +479,7 @@ class ExecutorAsyncFixedEpisodesNoWarmstartTrainer:
         print(f"Using {self.n_workers} async workers (ProcessPoolExecutor)")
         print(f"{'='*60}")
         
-        # NO warm starting - ALWAYS create fresh agent for each workflow
+        # Check if THIS EXACT workflow was trained before
         workflow_key = tuple(workflow_order)
         
         # Get observation dimensions
@@ -488,23 +491,46 @@ class ExecutorAsyncFixedEpisodesNoWarmstartTrainer:
         
         from workflow_rl.parallel_order_conditioned_ppo import ParallelOrderConditionedPPO, device
         
-        # Always create new agent - training from SCRATCH (random initialization)
-        print(f"  Creating new agent (training from scratch - NO warm start)")
-        
-        agent = ParallelOrderConditionedPPO(
-            input_dims=obs_dim,
-            n_envs=self.n_workers,
-            workflow_order=workflow_order,
-            workflow_manager=self.workflow_manager,
-            alignment_lambda=self.alignment_lambda,
-            compliant_bonus_scale=self.compliant_bonus_scale,
-            violation_penalty_scale=self.violation_penalty_scale,
-            K_epochs=6,
-            eps_clip=0.2,
-            gamma=0.99,
-            lr=0.002
-        )
-        # NO policy loading - starts with random weights!
+        if workflow_key in self.workflow_policies:
+            # This EXACT workflow was trained before - resume its policy
+            print(f"  Resuming from previous training of THIS workflow")
+            print(f"  (Same workflow revisited - loading its policy)")
+            
+            agent = ParallelOrderConditionedPPO(
+                input_dims=obs_dim,
+                n_envs=self.n_workers,
+                workflow_order=workflow_order,
+                workflow_manager=self.workflow_manager,
+                alignment_lambda=self.alignment_lambda,
+                compliant_bonus_scale=self.compliant_bonus_scale,
+                violation_penalty_scale=self.violation_penalty_scale,
+                K_epochs=6,
+                eps_clip=0.2,
+                gamma=0.99,
+                lr=0.002
+            )
+            # Load weights from THIS workflow's previous training
+            agent.policy.load_state_dict(self.workflow_policies[workflow_key].policy.state_dict())
+            agent.policy_old.load_state_dict(self.workflow_policies[workflow_key].policy_old.state_dict())
+        else:
+            # New workflow - train from SCRATCH (NO transfer from other workflows)
+            print(f"  Creating new agent (new workflow - training from scratch)")
+            print(f"  (NO transfer learning from other workflows)")
+            
+            agent = ParallelOrderConditionedPPO(
+                input_dims=obs_dim,
+                n_envs=self.n_workers,
+                workflow_order=workflow_order,
+                workflow_manager=self.workflow_manager,
+                alignment_lambda=self.alignment_lambda,
+                compliant_bonus_scale=self.compliant_bonus_scale,
+                violation_penalty_scale=self.violation_penalty_scale,
+                K_epochs=6,
+                eps_clip=0.2,
+                gamma=0.99,
+                lr=0.002
+            )
+            # NO policy loading - starts with random weights!
         
         # Training loop
         total_episodes = 0
@@ -629,7 +655,8 @@ class ExecutorAsyncFixedEpisodesNoWarmstartTrainer:
         torch.save(agent.policy.state_dict(), checkpoint_path)
         print(f"💾 Saved checkpoint for this workflow: {checkpoint_path}")
         print(f"   Policy stored for workflow: {' → '.join(workflow_order)}")
-        print(f"   NOTE: Next workflow will train from scratch (NO warm start)\n")
+        print(f"   Can be resumed if GP selects this workflow again")
+        print(f"   Other workflows will train from scratch (NO cross-workflow transfer)\n")
         
         # GP-UCB receives the raw environment reward so workflow search optimizes the task objective.
         eval_reward = avg_env_reward

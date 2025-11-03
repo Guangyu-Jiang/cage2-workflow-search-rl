@@ -1,20 +1,20 @@
 #!/bin/bash
 
-# Run fixed-episodes training WITHOUT warm starting
-# Each workflow trains from scratch (random initialization)
+# Run fixed-episodes training (Workflow-Specific, NO Cross-Transfer)
+# Can resume SAME workflow, but NO transfer between workflows
 
-echo "🚀 Starting Fixed-Episodes Training (NO Warm Start)"
+echo "🚀 Starting Fixed-Episodes Training (Workflow-Specific)"
 echo "=========================================="
 echo ""
 echo "Key Features:"
-echo "  ✅ Each workflow trains from scratch"
+echo "  ✅ Can resume SAME workflow if GP selects it again"
+echo "  ❌ NO transfer learning from OTHER workflows"
 echo "  ✅ Compliance rewards enabled"
-echo "  ❌ NO policy reuse between workflows"
 echo "  ❌ NO early stopping"
 echo "  ✅ Fixed 2500 episodes per workflow"
 echo ""
 echo "Purpose:"
-echo "  Test pure fixed-episode training without transfer learning"
+echo "  Test fixed episodes with workflow-specific policies"
 echo ""
 
 python workflow_rl/executor_async_fixed_episodes_no_warmstart.py \
