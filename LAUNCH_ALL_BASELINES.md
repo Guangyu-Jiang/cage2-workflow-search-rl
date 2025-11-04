@@ -15,7 +15,7 @@ All baselines configured for **100,000 episodes** with full logging.
 | **Fixed Workflows** | `baselines/fixed_priority_workflows.py` | 3 hours | `logs/fixed_workflows_*/` |
 | **PPO Baseline** | `train_parallel_baseline.py` | 15-20 min | `logs/parallel_baseline_*/` |
 | **SAC Baseline** | `train_parallel_sac.py` | 20-25 min | `logs/parallel_sac_*/` |
-| **Fixed Episodes** | `workflow_rl/executor_async_fixed_episodes.py` | 60-90 min | `logs/exp_fixed_episodes_*/` |
+| **Workflow Search PPO (Fixed Episodes)** | `workflow_rl/workflow_search_ppo.py` | 60-90 min | `logs/exp_fixed_episodes_*/` |
 | **Your Method** | `workflow_rl/executor_async_train_workflow_rl.py` | 30-40 min | `logs/exp_executor_async_*/` |
 
 ---
@@ -114,7 +114,7 @@ python train_parallel_sac.py \
 bash run_fixed_episodes_training.sh
 
 # Or with custom settings:
-python workflow_rl/executor_async_fixed_episodes.py \
+python workflow_rl/workflow_search_ppo.py \
     --n-workers 50 \
     --total-episodes 100000 \
     --fixed-episodes-per-workflow 2500 \
@@ -187,7 +187,7 @@ python train_parallel_sac.py --n-workers 50 --total-episodes 100000 \
 
 # 5. Fixed Episodes
 echo "5/7 - Fixed Episodes..."
-python workflow_rl/executor_async_fixed_episodes.py --n-workers 50 \
+python workflow_rl/workflow_search_ppo.py --n-workers 50 \
     --total-episodes 100000 --fixed-episodes-per-workflow 2500 \
     --episodes-per-update 50 --red-agent B_lineAgent
 

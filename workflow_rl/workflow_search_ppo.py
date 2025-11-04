@@ -1,13 +1,7 @@
 """
-Fixed-Episodes Training (WITH Compliance Rewards, NO Adaptive Termination)
-Trains each workflow for a FIXED number of episodes regardless of compliance achieved.
-
-Key characteristics:
-  - Compliance IS used for alignment rewards (like main method)
-  - Compliance is NOT used for early stopping
-  - Trains for exactly fixed_episodes_per_workflow episodes
-  
-This is an ablation study to show the value of adaptive termination based on compliance.
+Workflow Search PPO (Fixed Episodes)
+Trains each workflow for a fixed number of episodes (no adaptive termination)
+while still rewarding compliance. Provides a PPO-only baseline for comparison.
 """
 
 import os
@@ -15,6 +9,7 @@ import sys
 import warnings
 import contextlib
 import io
+import random
 
 os.environ.setdefault('GYM_DISABLE_WARNINGS', '1')
 os.environ.setdefault('GYM_LOG_LEVEL', 'ERROR')
@@ -253,7 +248,7 @@ def collect_single_episode(worker_id: int, scenario_path: str, red_agent_type,
     }
 
 
-class ExecutorAsyncFixedEpisodesTrainer:
+class WorkflowSearchPPOTrainer:
     """
     Fixed-episodes trainer using ProcessPoolExecutor.
     Trains for FIXED episodes without adaptive termination.
@@ -274,7 +269,8 @@ class ExecutorAsyncFixedEpisodesTrainer:
                  alignment_lambda: float = 30.0,  # KEEP compliance rewards!
                  scenario_path: str = '/home/ubuntu/CAGE2/cage-challenge-2/CybORG/CybORG/Shared/Scenarios/Scenario2.yaml',
                  red_agent_type=RedMeanderAgent,
-                 verbose_collection: bool = False):
+                 verbose_collection: bool = False,
+                 seed: int = 42):
         """
         Fixed-episodes trainer - Uses compliance rewards but NO adaptive termination!
         
@@ -296,8 +292,14 @@ class ExecutorAsyncFixedEpisodesTrainer:
         self.compliant_bonus_scale = 0.0
         self.violation_penalty_scale = 0.0
         self.verbose_collection = verbose_collection
-        
+        self.seed = seed
+
         self.total_episodes_used = 0
+        random.seed(self.seed)
+        np.random.seed(self.seed)
+        torch.manual_seed(self.seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(self.seed)
         
         # Create experiment directory
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -306,7 +308,7 @@ class ExecutorAsyncFixedEpisodesTrainer:
         self.checkpoint_dir = os.path.join("logs", self.experiment_name)
         os.makedirs(self.checkpoint_dir, exist_ok=True)
         
-        print(f"\nStarting FIXED-EPISODES experiment with PID: {pid}")
+        print(f"\nStarting WORKFLOW SEARCH PPO experiment with PID: {pid}")
         print(f"   Compliance rewards: YES (alignment_lambda={alignment_lambda})")
         print(f"   Adaptive termination: NO (trains for fixed {fixed_episodes_per_workflow} episodes)")
         print(f"   Ablation study: Tests value of adaptive early stopping")
@@ -343,6 +345,7 @@ class ExecutorAsyncFixedEpisodesTrainer:
             "red_agent": self.red_agent_type.__name__,
             "alignment_lambda": self.alignment_lambda,  # KEEPS compliance rewards
             "compliance_threshold": self.compliance_threshold,  # Logged but not used for early stopping
+            "random_seed": self.seed,
             "note": "Uses compliance for rewards, but trains for fixed episodes (no early stopping)"
         }
         with open(config_file, 'w') as cfg:
@@ -807,14 +810,16 @@ class ExecutorAsyncFixedEpisodesTrainer:
 
 def main():
     parser = argparse.ArgumentParser(description='Fixed-Episodes Workflow Training (NO Compliance-Based Training)')
-    parser.add_argument('--n-workers', type=int, default=50)
+    parser.add_argument('--n-workers', type=int, default=25)
     parser.add_argument('--total-episodes', type=int, default=100000)
     parser.add_argument('--fixed-episodes-per-workflow', type=int, default=2500,
                        help='Train for EXACTLY this many episodes per workflow (no early stopping)')
-    parser.add_argument('--episodes-per-update', type=int, default=50)
+    parser.add_argument('--episodes-per-update', type=int, default=25)
     parser.add_argument('--alignment-lambda', type=float, default=30.0,
                        help='Compliance reward weight (still used for rewards!)')
     parser.add_argument('--red-agent', type=str, default='B_lineAgent')
+    parser.add_argument('--seed', type=int, default=42,
+                        help='Random seed for reproducibility')
     
     args = parser.parse_args()
     
@@ -826,7 +831,7 @@ def main():
     red_agent = agent_map[args.red_agent]
     
     print(f"\n{'='*60}")
-    print(f"Configuration - FIXED EPISODES (Compliance Rewards, NO Adaptive Termination)")
+    print(f"Configuration - Workflow Search PPO (Fixed Episodes)")
     print(f"{'='*60}")
     print(f"Red Agent: {args.red_agent} ({red_agent.__name__})")
     print(f"Async Workers: {args.n_workers}")
@@ -834,16 +839,18 @@ def main():
     print(f"Fixed Episodes/Workflow: {args.fixed_episodes_per_workflow}")
     print(f"Alignment Lambda: {args.alignment_lambda} (compliance rewards ENABLED)")
     print(f"Architecture: ProcessPoolExecutor (Async)")
+    print(f"Random Seed: {args.seed}")
     print(f"NOTE: Trains for fixed episodes (no early stopping at 90%)")
     print(f"{'='*60}\n")
-    
-    trainer = ExecutorAsyncFixedEpisodesTrainer(
+
+    trainer = WorkflowSearchPPOTrainer(
         n_workers=args.n_workers,
         total_episode_budget=args.total_episodes,
         fixed_episodes_per_workflow=args.fixed_episodes_per_workflow,
         episodes_per_update=args.episodes_per_update,
         alignment_lambda=args.alignment_lambda,
-        red_agent_type=red_agent
+        red_agent_type=red_agent,
+        seed=args.seed
     )
     
     trainer.run_workflow_search()

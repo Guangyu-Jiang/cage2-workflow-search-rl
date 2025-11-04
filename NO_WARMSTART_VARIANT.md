@@ -6,7 +6,7 @@ You now have **TWO versions** of fixed-episodes training to test different aspec
 
 ## 1. WITH Warm Starting (Original)
 
-**File:** `workflow_rl/executor_async_fixed_episodes.py`
+**File:** `workflow_rl/workflow_search_ppo.py`
 
 **Features:**
 - ✅ Warm starting enabled
@@ -26,7 +26,7 @@ Workflow 3: Start from closest (Policy_1 or Policy_2) → Policy_3
 bash run_fixed_episodes_training.sh
 
 # Or:
-python workflow_rl/executor_async_fixed_episodes.py \
+python workflow_rl/workflow_search_ppo.py \
     --n-workers 25 \
     --fixed-episodes-per-workflow 2500
 ```
@@ -117,7 +117,7 @@ Tests: "Pure fixed-episode performance from scratch"
 **For L4DC paper:**
 
 If your adaptive method DOES use warm starting:
-- Use `executor_async_fixed_episodes.py` (WITH warm start)
+- Use `workflow_search_ppo.py` (WITH warm start)
 - Fair comparison (both use transfer learning)
 
 If your adaptive method DOESN'T use warm starting:
@@ -134,7 +134,7 @@ If your adaptive method DOESN'T use warm starting:
 
 You now have **THREE** fixed-episode configurations:
 
-1. **executor_async_fixed_episodes.py**
+1. **workflow_search_ppo.py**
    - With warm start
    - Default: 50 workers, 2500 episodes/workflow
 
@@ -148,4 +148,3 @@ You now have **THREE** fixed-episode configurations:
    - Default: 200 workers, variable episodes
 
 Perfect for comprehensive L4DC experiments! 🎓
-
