@@ -117,26 +117,6 @@ class GPUCBOrderSearch:
             (selected_order, ucb_score, info_dict)
         """
         
-        if len(self.observed_orders) < 2:
-            # Not enough data for GP, select randomly from candidates
-            idx = np.random.choice(len(candidate_orders))
-            selected = candidate_orders[idx]
-            
-            # For initial selection, prefer diverse orders
-            if len(self.observed_orders) == 0:
-                # First order: completely random
-                reason = 'initial_random'
-            else:
-                # Second order: maximize distance from first
-                distances = [workflow_manager.compute_kendall_distance(selected, self.observed_orders[0])]
-                reason = f'maximize_diversity (dist={distances[0]:.2f})'
-            
-            return selected, 0.0, {
-                'reason': reason, 
-                'n_obs': len(self.observed_orders),
-                'selection_method': 'random' if len(self.observed_orders) == 0 else 'diversity'
-            }
-        
         # Compute UCB scores for all candidates
         ucb_scores = []
         means = []
