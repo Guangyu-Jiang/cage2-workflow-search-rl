@@ -137,16 +137,27 @@ class GPUCBOrderSearch:
                 std = 1.0 / (1 + self.observation_counts.get(order_tuple, 0))
             else:
                 # Predict using nearest neighbors in order space
-                distances = [workflow_manager.compute_kendall_distance(order, obs_order) 
-                           for obs_order in self.observed_orders]
-                
-                # Weighted average based on distances
-                weights = np.exp(-np.array(distances) * 2)  # Exponential decay
-                weights /= weights.sum()
-                
-                mean = np.sum(weights * np.array(self.observed_rewards))
-                # Higher std for more distant orders
-                std = np.min(distances) * 10 + 1.0
+                if not self.observed_orders:
+                    # No observations yet: neutral mean, broad uncertainty
+                    mean = 0.0
+                    std = 10.0
+                else:
+                    distances = [
+                        workflow_manager.compute_kendall_distance(order, obs_order)
+                        for obs_order in self.observed_orders
+                    ]
+                    distances_arr = np.array(distances)
+                    # Prevent overflow / zero division
+                    safe_distances = np.maximum(distances_arr, 1e-6)
+                    weights = np.exp(-safe_distances * 2.0)
+                    weight_sum = weights.sum()
+                    if weight_sum == 0:
+                        weights = np.ones_like(weights) / len(weights)
+                    else:
+                        weights /= weight_sum
+                    mean = np.sum(weights * np.array(self.observed_rewards))
+                    min_distance = safe_distances.min()
+                    std = min_distance * 10.0 + 1.0
             
             # Adjust beta for frequently visited orders
             visit_count = self.observation_counts.get(order_tuple, 0)
@@ -167,14 +178,22 @@ class GPUCBOrderSearch:
         order_tuple = tuple(selected_order)
         visit_count = self.observation_counts.get(order_tuple, 0)
         
-        # Find closest observed orders
-        distances_to_observed = [
-            workflow_manager.compute_kendall_distance(selected_order, obs_order)
-            for obs_order in self.observed_orders
-        ]
-        closest_idx = np.argmin(distances_to_observed)
-        closest_order = self.observed_orders[closest_idx]
-        closest_reward = self.observed_rewards[closest_idx]
+        if self.observed_orders:
+            distances_to_observed = [
+                workflow_manager.compute_kendall_distance(selected_order, obs_order)
+                for obs_order in self.observed_orders
+            ]
+            closest_idx = int(np.argmin(distances_to_observed))
+            closest_order = self.observed_orders[closest_idx]
+            closest_reward = self.observed_rewards[closest_idx]
+            closest_distance = distances_to_observed[closest_idx]
+            closest_label = ' → '.join(closest_order)
+        else:
+            distances_to_observed = []
+            closest_idx = None
+            closest_reward = None
+            closest_distance = None
+            closest_label = None
         
         # Calculate exploration vs exploitation
         exploration_bonus = stds[best_idx] * self.beta
@@ -199,8 +218,8 @@ class GPUCBOrderSearch:
             'visit_count': visit_count,
             'exploration_bonus': exploration_bonus,
             'exploitation_value': exploitation_value,
-            'closest_observed': ' → '.join(closest_order),
-            'closest_distance': distances_to_observed[closest_idx],
+            'closest_observed': closest_label,
+            'closest_distance': closest_distance,
             'closest_reward': closest_reward,
             'selection_reason': 'exploitation' if exploitation_value > exploration_bonus else 'exploration',
             'top_3_candidates': top_3_info
