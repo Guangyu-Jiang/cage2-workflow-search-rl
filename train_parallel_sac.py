@@ -253,7 +253,8 @@ def train_parallel_sac(n_workers: int = 200,
                       updates_per_step: int = 1,
                       red_agent_type=B_lineAgent,
                       max_steps: int = 100,
-                      scenario_path: str = '/home/ubuntu/CAGE2/cage-challenge-2/CybORG/CybORG/Shared/Scenarios/Scenario2.yaml'):
+                      scenario_path: str = '/home/ubuntu/CAGE2/cage-challenge-2/CybORG/CybORG/Shared/Scenarios/Scenario2.yaml',
+                      seed: int = 42):
     """
     Train SAC with parallel episode collection
     """
@@ -268,6 +269,14 @@ def train_parallel_sac(n_workers: int = 200,
     print(f"Algorithm: SAC (Soft Actor-Critic)")
     print(f"NO workflow conditioning (standard SAC baseline)")
     print("="*60 + "\n")
+    print(f"Random Seed: {seed}\n")
+    
+    # Set random seeds
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
     
     # Create experiment directory
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -289,7 +298,8 @@ def train_parallel_sac(n_workers: int = 200,
             'total_episodes': total_episodes,
             'episodes_per_update': episodes_per_update,
             'batch_size': batch_size,
-            'updates_per_step': updates_per_step
+            'updates_per_step': updates_per_step,
+            'seed': seed
         },
         'sac_hyperparameters': {
             'learning_rate': 0.0003,
@@ -461,6 +471,8 @@ def main():
     parser.add_argument('--batch-size', type=int, default=256)
     parser.add_argument('--red-agent', type=str, default='B_lineAgent',
                        choices=['B_lineAgent', 'RedMeanderAgent', 'SleepAgent'])
+    parser.add_argument('--seed', type=int, default=42,
+                        help='Random seed for reproducibility')
     
     args = parser.parse_args()
     
@@ -480,6 +492,7 @@ def main():
     print(f"Algorithm: SAC (Soft Actor-Critic)")
     print(f"Action Space: Full 145 actions")
     print(f"Batch Size: {args.batch_size}")
+    print(f"Random Seed: {args.seed}")
     print("="*60)
     
     import multiprocessing as mp
@@ -490,7 +503,8 @@ def main():
         total_episodes=args.total_episodes,
         episodes_per_update=args.episodes_per_update,
         batch_size=args.batch_size,
-        red_agent_type=agent_map[args.red_agent]
+        red_agent_type=agent_map[args.red_agent],
+        seed=args.seed
     )
 
 
