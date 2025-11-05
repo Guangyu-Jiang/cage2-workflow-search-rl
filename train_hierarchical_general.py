@@ -13,6 +13,7 @@ sys.path.insert(0, '/home/ubuntu/CAGE2/-cyborg-cage-2')
 
 import torch
 import torch.nn as nn
+import random
 import numpy as np
 import csv
 import json
@@ -35,7 +36,7 @@ class HighLevelPolicy(nn.Module):
         super(HighLevelPolicy, self).__init__()
         
         self.actor = nn.Sequential(
-            nn.Linear(input_dims, 128),
+            nn.Linear(input_dims, 64),
             nn.Tanh(),
             nn.Linear(64, 64),
             nn.Tanh(),
@@ -44,7 +45,7 @@ class HighLevelPolicy(nn.Module):
         )
         
         self.critic = nn.Sequential(
-            nn.Linear(input_dims, 128),
+            nn.Linear(input_dims, 64),
             nn.Tanh(),
             nn.Linear(64, 64),
             nn.Tanh(),
@@ -64,7 +65,7 @@ class LowLevelPolicy(nn.Module):
         combined_input = input_dims + option_embed_dim
         
         self.actor = nn.Sequential(
-            nn.Linear(combined_input, 128),
+            nn.Linear(combined_input, 64),
             nn.Tanh(),
             nn.Linear(64, 64),
             nn.Tanh(),
@@ -73,7 +74,7 @@ class LowLevelPolicy(nn.Module):
         )
         
         self.critic = nn.Sequential(
-            nn.Linear(combined_input, 128),
+            nn.Linear(combined_input, 64),
             nn.Tanh(),
             nn.Linear(64, 64),
             nn.Tanh(),
@@ -363,7 +364,8 @@ def train_hierarchical_options(n_workers: int = 50,
                                option_duration: int = 10,
                                red_agent_type=B_lineAgent,
                                max_steps: int = 100,
-                               scenario_path: str = '/home/ubuntu/CAGE2/cage-challenge-2/CybORG/CybORG/Shared/Scenarios/Scenario2.yaml'):
+                               scenario_path: str = '/home/ubuntu/CAGE2/cage-challenge-2/CybORG/CybORG/Shared/Scenarios/Scenario2.yaml',
+                               seed: int = 42):
     """
     Train hierarchical RL with options framework
     """
@@ -378,7 +380,14 @@ def train_hierarchical_options(n_workers: int = 50,
     print(f"  High-level: Selects among {n_options} learned options")
     print(f"  Low-level: Executes primitive actions")
     print(f"  Option duration: ~{option_duration} steps")
+    print(f"Random Seed: {seed}")
     print("="*60 + "\n")
+    
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
     
     # Create experiment directory
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -398,7 +407,8 @@ def train_hierarchical_options(n_workers: int = 50,
         },
         'training': {
             'total_episodes': total_episodes,
-            'episodes_per_update': episodes_per_update
+            'episodes_per_update': episodes_per_update,
+            'seed': seed
         },
         'hierarchy': {
             'type': 'Options Framework (General)',
@@ -618,6 +628,8 @@ def main():
                        help='Average steps per option before switching')
     parser.add_argument('--red-agent', type=str, default='B_lineAgent',
                        choices=['B_lineAgent', 'RedMeanderAgent', 'SleepAgent'])
+    parser.add_argument('--seed', type=int, default=42,
+                        help='Random seed for reproducibility')
     
     args = parser.parse_args()
     
@@ -637,6 +649,7 @@ def main():
     print(f"N Options: {args.n_options}")
     print(f"Option Duration: ~{args.option_duration} steps")
     print(f"Domain Knowledge: None (general hierarchy)")
+    print(f"Random Seed: {args.seed}")
     print("="*60)
     
     import multiprocessing as mp
@@ -648,10 +661,10 @@ def main():
         episodes_per_update=args.episodes_per_update,
         n_options=args.n_options,
         option_duration=args.option_duration,
-        red_agent_type=agent_map[args.red_agent]
+        red_agent_type=agent_map[args.red_agent],
+        seed=args.seed
     )
 
 
 if __name__ == "__main__":
     main()
-
