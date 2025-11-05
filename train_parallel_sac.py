@@ -57,32 +57,33 @@ class SACActorCritic(nn.Module):
     
     def __init__(self, input_dims: int = 52, n_actions: int = 145):
         super(SACActorCritic, self).__init__()
+        hidden = 64  # Align depth/width with PPO baselines
         
         # Actor network (outputs action probabilities)
         self.actor = nn.Sequential(
-            nn.Linear(input_dims, 256),
+            nn.Linear(input_dims, hidden),
             nn.ReLU(),
-            nn.Linear(256, 256),
+            nn.Linear(hidden, hidden),
             nn.ReLU(),
-            nn.Linear(256, n_actions)
+            nn.Linear(hidden, n_actions)
         )
         
         # Q-network 1
         self.q1 = nn.Sequential(
-            nn.Linear(input_dims, 256),
+            nn.Linear(input_dims, hidden),
             nn.ReLU(),
-            nn.Linear(256, 256),
+            nn.Linear(hidden, hidden),
             nn.ReLU(),
-            nn.Linear(256, n_actions)
+            nn.Linear(hidden, n_actions)
         )
         
         # Q-network 2
         self.q2 = nn.Sequential(
-            nn.Linear(input_dims, 256),
+            nn.Linear(input_dims, hidden),
             nn.ReLU(),
-            nn.Linear(256, 256),
+            nn.Linear(hidden, hidden),
             nn.ReLU(),
-            nn.Linear(256, n_actions)
+            nn.Linear(hidden, n_actions)
         )
 
 
@@ -495,4 +496,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
