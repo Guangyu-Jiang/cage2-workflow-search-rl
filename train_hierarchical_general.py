@@ -37,7 +37,7 @@ class HighLevelPolicy(nn.Module):
         self.actor = nn.Sequential(
             nn.Linear(input_dims, 128),
             nn.Tanh(),
-            nn.Linear(128, 64),
+            nn.Linear(64, 64),
             nn.Tanh(),
             nn.Linear(64, n_options),
             nn.Softmax(dim=-1)
@@ -46,7 +46,7 @@ class HighLevelPolicy(nn.Module):
         self.critic = nn.Sequential(
             nn.Linear(input_dims, 128),
             nn.Tanh(),
-            nn.Linear(128, 64),
+            nn.Linear(64, 64),
             nn.Tanh(),
             nn.Linear(64, 1)
         )
@@ -66,7 +66,7 @@ class LowLevelPolicy(nn.Module):
         self.actor = nn.Sequential(
             nn.Linear(combined_input, 128),
             nn.Tanh(),
-            nn.Linear(128, 64),
+            nn.Linear(64, 64),
             nn.Tanh(),
             nn.Linear(64, n_actions),
             nn.Softmax(dim=-1)
@@ -75,7 +75,7 @@ class LowLevelPolicy(nn.Module):
         self.critic = nn.Sequential(
             nn.Linear(combined_input, 128),
             nn.Tanh(),
-            nn.Linear(128, 64),
+            nn.Linear(64, 64),
             nn.Tanh(),
             nn.Linear(64, 1)
         )
@@ -609,9 +609,9 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description='General Hierarchical RL Baseline')
-    parser.add_argument('--n-workers', type=int, default=50)
+    parser.add_argument('--n-workers', type=int, default=200)
     parser.add_argument('--total-episodes', type=int, default=100000)
-    parser.add_argument('--episodes-per-update', type=int, default=50)
+    parser.add_argument('--episodes-per-update', type=int, default=200)
     parser.add_argument('--n-options', type=int, default=8,
                        help='Number of high-level options (abstract actions)')
     parser.add_argument('--option-duration', type=int, default=10,
