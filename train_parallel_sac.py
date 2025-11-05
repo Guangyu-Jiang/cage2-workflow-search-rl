@@ -249,7 +249,7 @@ class ParallelSAC:
 def train_parallel_sac(n_workers: int = 200,
                       total_episodes: int = 100000,
                       episodes_per_update: int = 200,
-                      batch_size: int = 256,
+                      batch_size: int = 250,
                       updates_per_step: int = 1,
                       red_agent_type=B_lineAgent,
                       max_steps: int = 100,
@@ -300,9 +300,9 @@ def train_parallel_sac(n_workers: int = 200,
         },
         'network': {
             'input_dims': 52,
-            'hidden_dims': 256,
+            'hidden_dims': 64,
             'output_dims': 145,
-            'architecture': 'SAC with dual Q-networks'
+            'architecture': 'SAC with dual Q-networks (64x64 MLP)'
         }
     }
     
